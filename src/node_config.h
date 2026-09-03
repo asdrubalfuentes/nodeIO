@@ -20,7 +20,9 @@ struct NodeConfig {
   uint8_t  relaySafe;       // bit0..bit3 -> relay 1..4 power-on / safe level
   uint8_t  relayMode;       // 0 = latched, 1 = pulse
   uint16_t relayPulseMs;    // pulse width when relayMode == 1
-  uint16_t adoptTimeoutS;   // adopted node self-releases after this many s with no master frame (0 = off)
+  uint16_t adoptTimeoutS;   // 0 = nunca se des-adopta por silencio (recomendado; el maestro
+                            // reconstruye con ROLLCALL). >0 = emite una baliza HERE a 255 tras
+                            // ese silencio y re-arma; NO libera la adopcion.
 
   bool     adopted;         // false -> node advertises its MAC and waits for ADOPT
 };

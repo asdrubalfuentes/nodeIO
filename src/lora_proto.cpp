@@ -9,7 +9,7 @@ extern SX1262 radio;
 
 LoraStats loraStats = {0, 0, 0, 0, 0, "", 0};
 
-#define PROTO_FW "1.2026.004"
+#define PROTO_FW "1.2026.005"   // + ROLLCALL/HERE; el nodo ya no se des-adopta por silencio
 
 static volatile bool rxFlag = false;
 static const uint8_t BCAST  = 255;
@@ -73,6 +73,17 @@ static void sendIAM(const char* seq, uint8_t master) {
   delay(random(0, 800));                 // spread replies from many unadopted nodes
   char body[48];
   snprintf(body, sizeof(body), "IAM,%s,%s", nodeMac().c_str(), PROTO_FW);
+  reply(master, seq, body);
+}
+
+// ROLLCALL: un maestro que perdio su tabla la reconstruye desde el campo.
+// Solo responden los nodos ADOPTADOS, con su MAC, direccion y el maestro al que
+// creen pertenecer. No cambia nada del nodo (sigue adoptado).
+static void sendHERE(const char* seq, uint8_t master) {
+  delay(random(0, 800));                 // spread replies from many adopted nodes
+  char body[56];
+  snprintf(body, sizeof(body), "HERE,%s,%u,%u",
+           nodeMac().c_str(), cfg.nodeAddr, cfg.masterAddr);
   reply(master, seq, body);
 }
 
@@ -141,9 +152,10 @@ static void handleFrame(char* text) {
   uint8_t src = (uint8_t)atoi(t_src);
 
   // provisioning commands bypass the address filter
-  if (!strcmp(t_cmd, "DISC"))    { if (!cfg.adopted) sendIAM(t_seq, src); return; }
-  if (!strcmp(t_cmd, "ADOPT"))   { handleAdopt(save, t_seq, src);         return; }
-  if (!strcmp(t_cmd, "RELEASE")) { handleRelease(save, t_seq, src);       return; }
+  if (!strcmp(t_cmd, "DISC"))     { if (!cfg.adopted) sendIAM(t_seq, src);  return; }
+  if (!strcmp(t_cmd, "ROLLCALL")) { if (cfg.adopted)  sendHERE(t_seq, src); return; }
+  if (!strcmp(t_cmd, "ADOPT"))    { handleAdopt(save, t_seq, src);          return; }
+  if (!strcmp(t_cmd, "RELEASE"))  { handleRelease(save, t_seq, src);        return; }
 
   if (!cfg.adopted)                                    { loraStats.rxNotForUs++; return; }
   if (dst != cfg.nodeAddr && dst != BCAST)             { loraStats.rxNotForUs++; return; }
@@ -197,23 +209,23 @@ static void handleFrame(char* text) {
   }
 }
 
-// ---- adoption watchdog ----------------------------------------------------
-// An adopted node only leaves the "adopted" state on an explicit RELEASE. If the
-// master forgets it (reflashed, DB wiped, node dropped from its list) the node
-// would stay adopted forever and never answer DISC again. When no addressed
-// master frame (RD/WR/WP/PING/...) has arrived for cfg.adoptTimeoutS, fall back
-// to the discovery channel and reboot into "waiting for adoption".
+// ---- adoption watchdog --------------------------------------------------
+// Un nodo adoptado SOLO sale de ese estado con un RELEASE explicito. Si el
+// maestro lo olvida (reflasheado, NVS borrada, quitado de su lista) el nodo se
+// queda adoptado y espera: el maestro reconstruye su tabla con ROLLCALL.
+//
+// Con cfg.adoptTimeoutS > 0, tras ese silencio el nodo emite UNA baliza HERE a
+// 255 (se anuncia) y re-arma el contador. Nunca libera la adopcion ni reinicia.
 static void serviceAdoptionWatchdog() {
   if (!cfg.adopted || cfg.adoptTimeoutS == 0) return;
   if (millis() - loraStats.lastRxMs < (uint32_t)cfg.adoptTimeoutS * 1000UL) return;
 
-  Serial.printf("[prov] sin trama del maestro por %us -> paso a SIN ADOPTAR\n",
-                cfg.adoptTimeoutS);
-  cfg.adopted = false;
-  resetToDiscoveryChannel();
-  configSave();
-  delay(200);
-  ESP.restart();
+  Serial.printf("[prov] maestro callado %us -> baliza HERE\n", cfg.adoptTimeoutS);
+  char body[56];
+  snprintf(body, sizeof(body), "HERE,%s,%u,%u",
+           nodeMac().c_str(), cfg.nodeAddr, cfg.masterAddr);
+  reply(BCAST, "0", body);
+  loraStats.lastRxMs = millis();          // re-arma; no floodear
 }
 
 void loraLoop() {

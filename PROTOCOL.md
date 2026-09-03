@@ -19,9 +19,11 @@ Radio: SX1262 (RadioLib). Ambos extremos deben usar los **mismos** parámetros
 - El nodo procesa los comandos de operación solo si: CRC correcto **y** está
   **adoptado** **y** (`dst` == su dirección o `255`) **y** (`src` == dirección de
   maestro aceptada, o ésta es `0` = cualquiera). Si no, la descarta en silencio.
-- Los comandos de **aprovisionamiento** (`DISC` / `ADOPT` / `RELEASE`) saltan el
-  filtro de dirección (llegan a `dst 255`).
+- Los comandos de **aprovisionamiento** (`DISC` / `ROLLCALL` / `ADOPT` /
+  `RELEASE`) saltan el filtro de dirección (llegan a `dst 255`).
 - `src = 0` en una trama enviada por el nodo = "nodo sin adoptar".
+- Un nodo adoptado **nunca se des-adopta solo**. Solo `RELEASE` lo libera. Si el
+  maestro pierde su tabla, la reconstruye con `ROLLCALL` (ver abajo).
 
 ## Aprovisionamiento (descubrimiento y adopción)
 
@@ -31,8 +33,17 @@ solo escucha en el canal por defecto y muestra su MAC en la OLED.
 | cmd | sentido | efecto |
 |---|---|---|
 | `DISC` | maestro -> `255` | cada nodo **sin adoptar** responde `IAM,<mac>,<fw>` tras un retardo aleatorio 0-800 ms (evita colisiones) |
+| `ROLLCALL` | maestro -> `255` | cada nodo **adoptado** responde `HERE,<mac>,<addr>,<masterAddr>` tras un retardo aleatorio 0-800 ms. No cambia nada del nodo. Sirve para que un maestro que perdió su tabla la reconstruya |
 | `ADOPT,<mac>,<addr>,<freq>,<sf>,<bw>,<cr>,<sync>,<pwr>` | maestro -> `255` | el nodo cuya MAC coincide guarda dirección y canal LoRa, responde `ACK,<mac>` y **reinicia** ya adoptado |
 | `RELEASE,<mac>` | maestro -> `addr` o `255` | el nodo cuya MAC coincide vuelve a "sin adoptar", responde `ACK,<mac>` y reinicia |
+
+`HERE,<mac>,<addr>,<masterAddr>`: `<addr>` es la dirección LoRa asignada al nodo;
+`<masterAddr>` es el maestro al que cree pertenecer (`cfg.masterAddr`, `0` =
+cualquiera). El maestro solo incorpora a su tabla los `HERE` cuyo `<masterAddr>`
+es `0` o coincide con el suyo, y solo si la dirección está libre. Con
+`cfg.adoptTimeoutS > 0` el nodo además emite una baliza `HERE` a `255` (con
+`src` = su dirección, `seq` = `0`) tras ese tiempo sin tramas del maestro, y
+re-arma el contador — **sin** liberar la adopción.
 
 `<mac>` = `idUnico` = 12 hex del efuse (`ESP.getEfuseMac()`). El canal por defecto
 (915/125/SF9/CR5/0x34/14 dBm) es idéntico en nodo y maestro para que `DISC`
@@ -83,7 +94,8 @@ del AP, parámetros LoRa y comportamiento/habilitación de los relés, ver la MA
 el estado de adopción, y "Anular adopción". Normalmente **no hace falta**: la
 dirección y el canal los fija el maestro al adoptar.
 
-El proyecto hermano `nodeIO_master` es la **pasarela LoRa <-> Modbus RTU**:
-descubre y adopta nodos desde su propio portal y luego los sondea (`RD`),
-publicando sus entradas/salidas como registros Modbus. Ver
-`nodeIO_master/user manual.md`.
+El proyecto hermano `nodeIO_master` es la **pasarela LoRa <-> Modbus** (servidor
+**TCP :502** sobre WiFi, o RTU de respaldo): descubre y adopta nodos desde su
+propio portal, y si pierde su tabla la reconstruye con `ROLLCALL`. Luego los
+sondea (`RD`) y publica su IO como el **MAPA A** del contrato
+`../ORCHESTRATION/REGISTER_MAP.md`. Ver `nodeIO_master/user manual.md`.

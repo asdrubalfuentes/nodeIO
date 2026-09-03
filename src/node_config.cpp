@@ -4,7 +4,9 @@
 NodeConfig cfg;
 
 static const char*    NVS_NS    = "nodeio";
-static const uint32_t CFG_MAGIC = 0xA75AF104;   // bump if the struct layout changes
+static const uint32_t CFG_MAGIC = 0xA75AF105;   // bump if the struct layout changes
+                                                // 105: adoptTimeoutS default 0 (el nodo ya no
+                                                //      se des-adopta por silencio; ver ROLLCALL)
 
 void configFactory() {
   cfg = NodeConfig{};
@@ -24,7 +26,9 @@ void configFactory() {
   cfg.relaySafe    = 0x00;
   cfg.relayMode    = 0;
   cfg.relayPulseMs = 500;
-  cfg.adoptTimeoutS = 1800;   // 30 min without a master frame -> wait for re-adoption
+  cfg.adoptTimeoutS = 0;      // 0 = el nodo NUNCA se des-adopta por silencio del maestro.
+                              // Solo RELEASE des-adopta. Si el maestro pierde su tabla la
+                              // reconstruye con ROLLCALL. >0 = baliza HERE cada N s (no libera).
   cfg.adopted      = false;
 }
 

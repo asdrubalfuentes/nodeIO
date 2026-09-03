@@ -85,8 +85,11 @@ despacha. La respuesta se transmite con `radio.transmit()` y se vuelve a
 "<dst>,<src>,<seq>,<cmd>[,<arg>...]"  + CRC32(texto, 4 bytes LE)  + '\n'
 ```
 
-- Aprovisionamiento (sin adoptar, salta el filtro de dirección): `DISC` → `IAM,<mac>,<fw>`;
+- Aprovisionamiento (salta el filtro de dirección): `DISC` → `IAM,<mac>,<fw>` (solo sin adoptar);
+  `ROLLCALL` → `HERE,<mac>,<addr>,<masterAddr>` (solo adoptado, el maestro reconstruye su tabla);
   `ADOPT,<mac>,<addr>,<canal>` → `ACK` + reinicio; `RELEASE,<mac>` → `ACK` + reinicio.
+- El nodo adoptado **no se des-adopta por silencio del maestro** (`adoptTimeoutS = 0`
+  por defecto); con `> 0` emite una baliza `HERE` y re-arma, sin liberar.
 - Operación (solo si `cfg.adopted`): CRC ok · `dst == cfg.nodeAddr || dst == 255` ·
   `cfg.masterAddr == 0 || src == cfg.masterAddr`.
   `RD` → `ST,<a1..a4>,<d1..d4>,<o1..o4>` · `WR,<r1..r4>` (`0/1/-`) ·
@@ -116,11 +119,13 @@ y responde con `reply(src, t_seq, body)`. Documenta en `PROTOCOL.md`.
 
 ## 6. Relación con nodeIO_master
 
-`nodeIO_master` es la **pasarela LoRa ↔ Modbus RTU**: descubre y adopta nodos y
-los sondea, publicando su IO como registros Modbus. Solo comparte con este
-proyecto `src/io.{h,cpp}` y `src/images.h` **byte a byte** (mantener en sync a
-mano). Todo lo demás diverge: aquí `lora_proto.*` + `node_config.*` + `portal.*`;
-allí `lora_master.*` + `master_config.*` + `portal_master.*` + `modbus_gw.*`.
+`nodeIO_master` es la **pasarela LoRa ↔ Modbus** (servidor TCP :502 / RTU): descubre
+y adopta nodos, los sondea y publica su IO como el **MAPA A** del contrato
+`../ORCHESTRATION/REGISTER_MAP.md`; si pierde su tabla la reconstruye con `ROLLCALL`.
+Solo comparte con este proyecto `src/io.{h,cpp}` y `src/images.h` **byte a byte**
+(mantener en sync a mano). Todo lo demás diverge: aquí `lora_proto.*` +
+`node_config.*` + `portal.*`; allí `lora_master.*` + `master_config.*` +
+`portal_master.*` + `modbus_gw.*` + `net_master.*`.
 
 ---
 

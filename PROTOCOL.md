@@ -36,6 +36,7 @@ solo escucha en el canal por defecto y muestra su MAC en la OLED.
 | `ROLLCALL` | maestro -> `255` | cada nodo **adoptado** responde `HERE,<mac>,<addr>,<masterAddr>` tras un retardo aleatorio 0-800 ms. No cambia nada del nodo. Sirve para que un maestro que perdió su tabla la reconstruya |
 | `ADOPT,<mac>,<addr>,<freq>,<sf>,<bw>,<cr>,<sync>,<pwr>` | maestro -> `255` | el nodo cuya MAC coincide guarda dirección y canal LoRa, responde `ACK,<mac>` y **reinicia** ya adoptado |
 | `RELEASE,<mac>` | maestro -> `addr` o `255` | el nodo cuya MAC coincide vuelve a "sin adoptar", responde `ACK,<mac>` y reinicia |
+| `OTA,<mac>` | maestro -> `addr` o `255` | el nodo cuya MAC coincide marca "OTA pendiente" en NVS, responde `ACK,<mac>,OTA` y **reinicia en modo actualización**: levanta la WiFi de mantenimiento (`otaSsid`/`otaPass` del portal), descarga el firmware de GitHub Releases, verifica SHA-256, flashea y reinicia. Si no hay WiFi de mantenimiento configurada responde `ERR,NOWIFI` |
 
 `HERE,<mac>,<addr>,<masterAddr>`: `<addr>` es la dirección LoRa asignada al nodo;
 `<masterAddr>` es el maestro al que cree pertenecer (`cfg.masterAddr`, `0` =

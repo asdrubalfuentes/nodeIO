@@ -9,7 +9,7 @@ extern SX1262 radio;
 
 LoraStats loraStats = {0, 0, 0, 0, 0, "", 0};
 
-#define PROTO_FW "1.2026.005"   // + ROLLCALL/HERE; el nodo ya no se des-adopta por silencio
+#define PROTO_FW "1.2026.006"   // + ROLLCALL/HERE; + comando OTA (reinicio a modo actualizacion)
 
 static volatile bool rxFlag = false;
 static const uint8_t BCAST  = 255;
@@ -124,6 +124,28 @@ static void resetToDiscoveryChannel() {
   cfg.loraCr = 5; cfg.loraSync = 0x34; cfg.loraPwr = 14;
 }
 
+// OTA: el maestro pide al nodo que reinicie en "modo actualizacion". El nodo
+// marca una bandera en NVS, hace ACK y reinicia; en el arranque levanta la WiFi
+// de mantenimiento (cfg.otaSsid, configurada por el portal), descarga el
+// firmware de GitHub Releases, lo verifica y flashea. Formato:
+//   dst,src,seq,OTA,<mac>          (sin credenciales por el aire)
+static void handleOta(char*& save, const char* seq, uint8_t master) {
+  char* mac = strtok_r(nullptr, ",", &save);
+  if (!mac || !nodeMac().equalsIgnoreCase(mac)) return;   // OTA para otro nodo
+
+  if (cfg.otaSsid[0] == '\0') {
+    reply(master, seq, "ERR,NOWIFI");                     // no hay red de mantenimiento
+    return;
+  }
+  otaSetPending(true);
+  char body[40];
+  snprintf(body, sizeof(body), "ACK,%s,OTA", nodeMac().c_str());
+  reply(master, seq, body);
+  Serial.println("[ota] pendiente -> reinicio a modo OTA");
+  delay(400);
+  ESP.restart();
+}
+
 static void handleRelease(char*& save, const char* seq, uint8_t master) {
   char* mac = strtok_r(nullptr, ",", &save);
   if (!mac || !nodeMac().equalsIgnoreCase(mac)) return;
@@ -156,6 +178,7 @@ static void handleFrame(char* text) {
   if (!strcmp(t_cmd, "ROLLCALL")) { if (cfg.adopted)  sendHERE(t_seq, src); return; }
   if (!strcmp(t_cmd, "ADOPT"))    { handleAdopt(save, t_seq, src);          return; }
   if (!strcmp(t_cmd, "RELEASE"))  { handleRelease(save, t_seq, src);        return; }
+  if (!strcmp(t_cmd, "OTA"))      { handleOta(save, t_seq, src);            return; }
 
   if (!cfg.adopted)                                    { loraStats.rxNotForUs++; return; }
   if (dst != cfg.nodeAddr && dst != BCAST)             { loraStats.rxNotForUs++; return; }

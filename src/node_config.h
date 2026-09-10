@@ -25,6 +25,10 @@ struct NodeConfig {
                             // ese silencio y re-arma; NO libera la adopcion.
 
   bool     adopted;         // false -> node advertises its MAC and waits for ADOPT
+
+  // --- WiFi de mantenimiento (solo para OTA por comando; ver lora_proto OTA) ---
+  char     otaSsid[33];     // "" = OTA remota deshabilitada
+  char     otaPass[65];
 };
 
 extern NodeConfig cfg;
@@ -34,3 +38,8 @@ void   configLoad();      // fill cfg from NVS, or defaults if missing/invalid
 bool   configSave();      // persist cfg to NVS
 bool   configStored();    // true if a valid config blob exists in NVS
 String nodeMac();         // this chip's 12-hex efuse MAC ("idUnico")
+
+// Bandera "arrancar en modo OTA" (clave suelta en NVS, independiente del blob:
+// sobrevive a un cambio de CFG_MAGIC). La pone el comando LoRa 'OTA'.
+void   otaSetPending(bool v);
+bool   otaTakePending();  // lee y LIMPIA la bandera (para no reintentar en bucle)

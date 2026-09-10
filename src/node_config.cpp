@@ -4,9 +4,10 @@
 NodeConfig cfg;
 
 static const char*    NVS_NS    = "nodeio";
-static const uint32_t CFG_MAGIC = 0xA75AF105;   // bump if the struct layout changes
+static const uint32_t CFG_MAGIC = 0xA75AF106;   // bump if the struct layout changes
                                                 // 105: adoptTimeoutS default 0 (el nodo ya no
                                                 //      se des-adopta por silencio; ver ROLLCALL)
+                                                // 106: + otaSsid/otaPass (WiFi de mantenimiento OTA)
 
 void configFactory() {
   cfg = NodeConfig{};
@@ -30,6 +31,8 @@ void configFactory() {
                               // Solo RELEASE des-adopta. Si el maestro pierde su tabla la
                               // reconstruye con ROLLCALL. >0 = baliza HERE cada N s (no libera).
   cfg.adopted      = false;
+  cfg.otaSsid[0]   = '\0';    // OTA remota deshabilitada hasta configurar la red de mantenimiento
+  cfg.otaPass[0]   = '\0';
 }
 
 String nodeMac() {
@@ -64,4 +67,20 @@ bool configStored() {
   bool ok = (p.getUInt("magic", 0) == CFG_MAGIC);
   p.end();
   return ok;
+}
+
+void otaSetPending(bool v) {
+  Preferences p;
+  if (!p.begin(NVS_NS, false)) return;
+  p.putUChar("otapend", v ? 1 : 0);
+  p.end();
+}
+
+bool otaTakePending() {
+  Preferences p;
+  if (!p.begin(NVS_NS, false)) return false;
+  bool v = p.getUChar("otapend", 0) != 0;
+  if (v) p.putUChar("otapend", 0);
+  p.end();
+  return v;
 }

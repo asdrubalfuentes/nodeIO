@@ -1,0 +1,77 @@
+# Build & Release firmware  -  plantilla Aysafi (nodeIO / nodeIO_master / miHMI)
+#
+# Copia a  <repo>/.github/workflows/release.yml  y ajusta:
+#   env.PIO_ENV                -> el [env:...] de tu platformio.ini
+#   (opcional) los secrets     -> solo si el firmware necesita credenciales en build.
+#     El trío nodeIO/nodeIO_master/miHMI toma WiFi de NVS/microSD en runtime,
+#     asi que NO necesitan secrets: compilan con credenciales vacias.
+#
+# Disparador = tag vX.Y.Z sobre main (release aprobado por el mantenedor).
+# Publica un GitHub Release "latest" con  firmware.bin + version.txt + firmware.sha256
+# que el equipo consulta en releases/latest/download/ en el proximo arranque.
+
+name: Build & Release firmware
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+env:
+  PIO_ENV: heltec_wifi_lora_32_V3
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verificar que el tag pertenece a main
+        run: |
+          git fetch origin main --depth=100
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::El tag ${GITHUB_REF_NAME} no cuelga de main."
+            exit 1
+          fi
+
+      - name: Extraer version del tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Compilar firmware
+        env:
+          EXTRA_BUILD_FLAGS: -D FW_VERSION_OVERRIDE=\"${{ steps.version.outputs.version }}\"
+        run: pio run -e "${{ env.PIO_ENV }}"
+
+      - name: Preparar assets
+        id: assets
+        run: |
+          mkdir -p dist
+          cp ".pio/build/${{ env.PIO_ENV }}/firmware.bin" dist/firmware.bin
+          printf '%s' "${{ steps.version.outputs.version }}" > dist/version.txt
+          sha256sum dist/firmware.bin | cut -d' ' -f1 | tr -d '\n' > dist/firmware.sha256
+          echo "Version: ${{ steps.version.outputs.version }}  SHA256: $(cat dist/firmware.sha256)"
+
+      - name: Publicar GitHub Release (latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Firmware ${{ steps.version.outputs.version }}"
+          tag_name: ${{ github.ref_name }}
+          make_latest: true
+          files: |
+            dist/firmware.bin
+            dist/version.txt
+            dist/firmware.sha256

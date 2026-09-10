@@ -56,6 +56,12 @@ static String buildPage() {
   h += "<label>Clave (vac&iacute;o = abierta, si no min 8)</label><input name=appass maxlength=23 value='" + String(cfg.apPass) + "'>";
   h += F("</fieldset>");
 
+  h += F("<fieldset><legend>WiFi de mantenimiento (OTA remota)</legend>");
+  h += F("<label>SSID (vac&iacute;o = OTA remota deshabilitada)</label>");
+  h += "<input name=otassid maxlength=32 value='" + String(cfg.otaSsid) + "'>";
+  h += "<label>Clave</label><input name=otapass maxlength=64 value='" + String(cfg.otaPass) + "'>";
+  h += F("</fieldset>");
+
   h += F("<fieldset><legend>LoRa (debe coincidir con el maestro)</legend>");
   h += "<label>Frecuencia MHz</label><input name=lfreq type=number step=0.1 value=" + String(cfg.loraFreq, 1) + ">";
   h += "<label>Ancho de banda kHz</label><input name=lbw type=number step=0.1 value=" + String(cfg.loraBw, 1) + ">";
@@ -105,6 +111,8 @@ static void handleSave() {
   web.arg("nloc").toCharArray(cfg.nodeLoc, sizeof(cfg.nodeLoc));
   web.arg("apssid").toCharArray(cfg.apSsid, sizeof(cfg.apSsid));
   web.arg("appass").toCharArray(cfg.apPass, sizeof(cfg.apPass));
+  web.arg("otassid").toCharArray(cfg.otaSsid, sizeof(cfg.otaSsid));
+  web.arg("otapass").toCharArray(cfg.otaPass, sizeof(cfg.otaPass));
 
   if (web.hasArg("lfreq")) cfg.loraFreq = web.arg("lfreq").toFloat();
   if (web.hasArg("lbw"))   cfg.loraBw   = web.arg("lbw").toFloat();

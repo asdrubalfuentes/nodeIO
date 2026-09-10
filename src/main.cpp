@@ -1,15 +1,25 @@
 #include <Arduino.h>
 #include <heltec_unofficial.h>   // provides: radio (SX1262), display (SSD1306Wire), button (HotButton)
+#include <WiFi.h>
 #include "images.h"
 #include "io.h"
 #include "node_config.h"
 #include "portal.h"
 #include "lora_proto.h"
+#include "ota_update.h"
 
 // Remote IO Node - by Aysafi
 // Responds over the LoRa link to a master: reports the 4 analog + 4 digital
 // inputs and writes the 4 relay outputs. Configured through a captive portal.
-#define FW_VERSION "V1.2026.004"
+#define FW_VERSION "V1.2026.006"
+
+// Version semver (X.Y.Z) para el canal OTA (GitHub Releases). El CI la
+// sobreescribe desde el tag; sin CI vale este literal.
+#ifdef FW_VERSION_OVERRIDE
+#define FW_SEMVER FW_VERSION_OVERRIDE
+#else
+#define FW_SEMVER "1.3.0"
+#endif
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };
 static Mode mode = MODE_NORMAL;
@@ -36,6 +46,68 @@ static void enterPortal() {
   loraStandby();
   portalStart();
   mode = MODE_PORTAL;
+}
+
+// ---- modo OTA (lo dispara el comando LoRa 'OTA') -------------------------
+static void otaOled(ota::Phase ph, int pct, const char *d) {
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 0, "MODO OTA " FW_SEMVER);
+  const char *m = ""; char buf[24];
+  switch (ph) {
+    case ota::Phase::Check:    m = "buscando...";  break;
+    case ota::Phase::UpToDate: m = "al dia";       break;
+    case ota::Phase::Download: snprintf(buf, sizeof(buf), "bajando %d%%", pct); m = buf; break;
+    case ota::Phase::Verify:   m = "verificando";  break;
+    case ota::Phase::Flash:    m = "escribiendo";  break;
+    case ota::Phase::Done:     m = "OK, reinicia"; break;
+    case ota::Phase::Error:    m = "error";        break;
+  }
+  display.drawString(0, 22, m);
+  if (d && *d) display.drawString(0, 40, d);
+  display.display();
+}
+
+// Si hay bandera "OTA pendiente" en NVS: levanta la WiFi de mantenimiento,
+// actualiza desde GitHub Releases y reinicia. Si no hay que actualizar o falla,
+// apaga la WiFi y retorna para seguir el arranque normal (LoRa).
+static void runOtaModeIfPending() {
+  if (!otaTakePending()) return;
+  Serial.println("[ota] arranque en MODO OTA");
+
+  if (cfg.otaSsid[0] == '\0') {
+    Serial.println("[ota] sin red de mantenimiento configurada");
+    return;
+  }
+
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 0, "MODO OTA");
+  display.drawString(0, 22, String("WiFi: ") + cfg.otaSsid);
+  display.display();
+
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(cfg.otaSsid, cfg.otaPass);
+  uint32_t t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) delay(200);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    ota::Config oc;
+    oc.owner = "asdrubalfuentes";
+    oc.repo  = "nodeIO";
+    oc.currentVersion = FW_SEMVER;
+    ota::Result r = ota::run(oc, otaOled);      // si actualiza, reinicia aqui dentro
+    Serial.printf("[ota] ok=%d update=%d %s\n", r.ok, r.hasUpdate, r.error);
+    if (r.ok && !r.hasUpdate) { otaOled(ota::Phase::UpToDate, 0, "al dia"); delay(1200); }
+  } else {
+    Serial.println("[ota] la WiFi de mantenimiento no conecto");
+    otaOled(ota::Phase::Error, 0, "sin WiFi");
+    delay(1500);
+  }
+
+  WiFi.disconnect(true, true);
+  WiFi.mode(WIFI_OFF);
 }
 
 // Former atiendeInterrupciones(): PRG (built-in) button toggles relay 1,
@@ -115,6 +187,7 @@ void setup() {
   Serial.println("\nRemote IO Node, by Aysafi " FW_VERSION);
 
   configLoad();
+  runOtaModeIfPending();          // si el maestro pidio OTA: actualiza y reinicia
   ioInit(cfg.relayEnable, cfg.relaySafe);
   splash();
 

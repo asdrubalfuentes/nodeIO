@@ -9,6 +9,35 @@ static const uint32_t CFG_MAGIC = 0xA75AF106;   // bump if the struct layout cha
                                                 //      se des-adopta por silencio; ver ROLLCALL)
                                                 // 106: + otaSsid/otaPass (WiFi de mantenimiento OTA)
 
+// --- Identidad / emparejamiento -------------------------------------------
+// Estos campos se guardan TAMBIEN como claves sueltas (sin magic): sobreviven a
+// un cambio de CFG_MAGIC (nuevo firmware con features nuevas). Sin ellos, cada
+// bump de magic dejaba al nodo "sin adoptar" y fuera de su canal LoRa.
+static void identityLoad(Preferences& p) {
+  cfg.adopted    = p.getBool ("id_adopted", cfg.adopted);
+  cfg.nodeAddr   = p.getUChar("id_naddr",   cfg.nodeAddr);
+  cfg.masterAddr = p.getUChar("id_maddr",   cfg.masterAddr);
+  cfg.loraFreq   = p.getFloat("id_lfreq",   cfg.loraFreq);
+  cfg.loraBw     = p.getFloat("id_lbw",     cfg.loraBw);
+  cfg.loraSf     = p.getUChar("id_lsf",     cfg.loraSf);
+  cfg.loraCr     = p.getUChar("id_lcr",     cfg.loraCr);
+  cfg.loraSync   = p.getUChar("id_lsync",   cfg.loraSync);
+  cfg.loraPwr    = (int8_t)p.getChar("id_lpwr", cfg.loraPwr);
+}
+
+static void identitySave(Preferences& p) {
+  p.putBool ("id_adopted", cfg.adopted);
+  p.putUChar("id_naddr",   cfg.nodeAddr);
+  p.putUChar("id_maddr",   cfg.masterAddr);
+  p.putFloat("id_lfreq",   cfg.loraFreq);
+  p.putFloat("id_lbw",     cfg.loraBw);
+  p.putUChar("id_lsf",     cfg.loraSf);
+  p.putUChar("id_lcr",     cfg.loraCr);
+  p.putUChar("id_lsync",   cfg.loraSync);
+  p.putChar ("id_lpwr",    cfg.loraPwr);
+  p.putBool ("id_set",     true);
+}
+
 void configFactory() {
   cfg = NodeConfig{};
   cfg.nodeAddr     = 1;
@@ -45,10 +74,13 @@ void configLoad() {
   configFactory();
   Preferences p;
   if (!p.begin(NVS_NS, true)) return;
+  // 1) blob de features (solo si el layout coincide con este firmware)
   if (p.getUInt("magic", 0) == CFG_MAGIC &&
       p.getBytesLength("blob") == sizeof(NodeConfig)) {
     p.getBytes("blob", &cfg, sizeof(NodeConfig));
   }
+  // 2) identidad: siempre (con lo anterior como default) -> gana
+  identityLoad(p);
   p.end();
 }
 
@@ -57,6 +89,7 @@ bool configSave() {
   if (!p.begin(NVS_NS, false)) return false;
   size_t n = p.putBytes("blob", &cfg, sizeof(NodeConfig));
   p.putUInt("magic", CFG_MAGIC);
+  identitySave(p);
   p.end();
   return n == sizeof(NodeConfig);
 }
@@ -64,7 +97,7 @@ bool configSave() {
 bool configStored() {
   Preferences p;
   if (!p.begin(NVS_NS, true)) return false;
-  bool ok = (p.getUInt("magic", 0) == CFG_MAGIC);
+  bool ok = (p.getUInt("magic", 0) == CFG_MAGIC) || p.getBool("id_set", false);
   p.end();
   return ok;
 }

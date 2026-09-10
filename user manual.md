@@ -100,6 +100,7 @@ configurado en lugar de quedar enclavado.
 | | Dirección de maestro aceptada | 0 = acepta cualquier maestro |
 | | Nombre / Ubicación | texto libre para identificar el nodo |
 | WiFi del portal | SSID / Clave | red que crea el nodo para mostrar el portal (clave vacía = abierta, si no mínimo 8) |
+| WiFi de mantenimiento | SSID / Clave | red **cliente** que el nodo usa solo para actualizarse por OTA (sección 5). SSID vacío = OTA remota deshabilitada |
 | LoRa | Frecuencia, Ancho de banda, SF, CR, Sync word, Potencia TX | **deben ser idénticos en el maestro**; el maestro los reescribe al adoptar |
 | Relés | Habilitación R1–R4 | un relé no habilitado ignora las órdenes y aparece como `x` |
 | | Estado seguro R1–R4 | nivel al que quedan los relés al arrancar y al terminar un pulso |
@@ -108,7 +109,27 @@ configurado en lugar de quedar enclavado.
 
 ---
 
-## 5. Valores de fábrica
+## 5. Actualización de firmware (OTA)
+
+El nodo se actualiza **sin cable**, por orden del maestro:
+
+1. Una sola vez, en MODO CONFIG, se rellena la **WiFi de mantenimiento** (una red
+   con salida a Internet que esté disponible en el sitio) y se guarda. Sin ese
+   dato el nodo no puede actualizarse por OTA.
+2. Cuando hay una versión nueva publicada, desde el portal del **Master IO** se
+   pulsa **OTA** en la fila de ese nodo.
+3. El nodo confirma, **reinicia en "MODO OTA"**, se conecta a la WiFi de
+   mantenimiento, descarga el firmware, comprueba su integridad (SHA-256) y se
+   reinicia ya actualizado. La OLED muestra "MODO OTA" y el porcentaje de
+   descarga.
+4. Si la WiFi de mantenimiento no está a la vista (30 s), el nodo vuelve solo a
+   la operación LoRa normal sin cambiar nada.
+
+No desconectes la alimentación mientras la OLED muestre "escribiendo".
+
+---
+
+## 6. Valores de fábrica
 
 | Parámetro | Valor |
 |---|---|
@@ -125,10 +146,11 @@ configurado en lugar de quedar enclavado.
 | Estado seguro | todos abiertos |
 | Modo de relé | Enclavado |
 | Ancho de pulso | 500 ms |
+| WiFi de mantenimiento | sin configurar (OTA remota deshabilitada) |
 
 ---
 
-## 6. Problemas frecuentes
+## 7. Problemas frecuentes
 
 | Síntoma | Causa probable / solución |
 |---|---|
@@ -137,7 +159,9 @@ configurado en lugar de quedar enclavado.
 | Un relé no acciona | está deshabilitado en la configuración (aparece `x`) |
 | No aparece la red `NodoIO-Setup` | no estás en MODO CONFIG: mantén BUTTON_1 ~3 s |
 | No abre el portal solo | entra a mano a `http://192.168.4.1` |
-| Quiero volver a fábrica | entra al portal y reescribe los campos con los valores de la sección 5 |
+| Quiero volver a fábrica | entra al portal y reescribe los campos con los valores de la sección 6 |
+| El botón OTA del Master dice que el nodo no responde | el nodo no tiene **WiFi de mantenimiento** configurada, o está fuera de enlace LoRa |
+| El nodo se queda en "MODO OTA" sin avanzar | la WiFi de mantenimiento no tiene salida a Internet / clave incorrecta; espera 30 s y vuelve solo a modo normal |
 
 Consola serie (USB, 115200 baudios) imprime el arranque, los eventos de entrada
 y los mensajes del portal.

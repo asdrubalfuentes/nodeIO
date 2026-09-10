@@ -36,7 +36,8 @@ pio device monitor -b 115200
 | `src/io.{h,cpp}` | Mapa de pines, init, ISR compartida de entradas digitales/botones, lectura de AI/DI, control de relés con máscara de habilitación + estado seguro + pulsos. |
 | `src/node_config.{h,cpp}` | `struct NodeConfig` persistida en NVS (namespace `nodeio`, un blob + `magic`), incluye `bool adopted`. `nodeMac()` = idUnico (12 hex efuse). Sustituye los stubs `rescueFlashConfig()/saveFlashConfig()` del scaffold original. |
 | `src/portal.{h,cpp}` | Portal cautivo: `WiFi.softAP` + `DNSServer` (:53, `*`) + `WebServer` (:80). `POST /save` valida, persiste y reinicia. `POST /release` anula la adopción. Muestra MAC + estado de adopción. |
-| `src/lora_proto.{h,cpp}` | Protocolo responder: `begin()` desde `cfg`, RX por interrupción (`setDio1Action`), verificación CRC32. Aprovisionamiento `DISC`/`ADOPT`/`RELEASE` (solo relevante sin adoptar). Dispatch de `RD`/`WR`/`WP`/`PING` solo si `cfg.adopted`. |
+| `src/lora_proto.{h,cpp}` | Protocolo responder: `begin()` desde `cfg`, RX por interrupción (`setDio1Action`), verificación CRC32. Aprovisionamiento `DISC`/`ROLLCALL`/`ADOPT`/`RELEASE`/**`OTA`**. Dispatch de `RD`/`WR`/`WP`/`PING` solo si `cfg.adopted`. |
+| `src/ota_update.{h,cpp}` | Cliente **OTA "GitHub Releases pull"** (módulo común de `../ORCHESTRATION/tools/ota/`): `version.txt` → `firmware.bin` + verificación `SHA-256`. Lo dispara el comando LoRa `OTA` (ver §5). |
 | `src/images.h` | XBM del splash (`poweredBy`, `aysafi_Logo_bits`). |
 | `PROTOCOL.md` | Especificación de la trama y los comandos. |
 
@@ -57,8 +58,8 @@ símbolos duplicados en el enlace. Por eso:
 ## 3. Flujo de ejecución
 
 ```
-setup(): heltec_setup()  -> configLoad() -> ioInit(cfg.relayEnable, cfg.relaySafe)
-         -> splash()
+setup(): heltec_setup()  -> configLoad() -> runOtaModeIfPending()
+         -> ioInit(cfg.relayEnable, cfg.relaySafe) -> splash()
          -> loraBegin() ? (cfg.adopted ? MODE_NORMAL : MODE_WAIT_ADOPT) : enterPortal()
 
 loop():  heltec_loop()                     // HotButton
@@ -87,7 +88,8 @@ despacha. La respuesta se transmite con `radio.transmit()` y se vuelve a
 
 - Aprovisionamiento (salta el filtro de dirección): `DISC` → `IAM,<mac>,<fw>` (solo sin adoptar);
   `ROLLCALL` → `HERE,<mac>,<addr>,<masterAddr>` (solo adoptado, el maestro reconstruye su tabla);
-  `ADOPT,<mac>,<addr>,<canal>` → `ACK` + reinicio; `RELEASE,<mac>` → `ACK` + reinicio.
+  `ADOPT,<mac>,<addr>,<canal>` → `ACK` + reinicio; `RELEASE,<mac>` → `ACK` + reinicio;
+  `OTA,<mac>` → `ACK,<mac>,OTA` + reinicio en **modo actualización** (§ siguiente).
 - El nodo adoptado **no se des-adopta por silencio del maestro** (`adoptTimeoutS = 0`
   por defecto); con `> 0` emite una baliza `HERE` y re-arma, sin liberar.
 - Operación (solo si `cfg.adopted`): CRC ok · `dst == cfg.nodeAddr || dst == 255` ·
@@ -99,7 +101,28 @@ despacha. La respuesta se transmite con `radio.transmit()` y se vuelve a
 
 ---
 
-## 5. Cómo extender
+## 5. OTA (actualización remota sin cable)
+
+Módulo `src/ota_update.{h,cpp}` + CI `.github/workflows/release.yml` (modelo de
+`../ORCHESTRATION/OTA_ROLLOUT.md`).
+
+- **Publicar:** `git tag vX.Y.Z` sobre `main` → el workflow compila e inyecta
+  `-D FW_VERSION_OVERRIDE=X.Y.Z`, y publica un Release `latest` con
+  `firmware.bin` + `version.txt` + `firmware.sha256`. `FW_SEMVER` (`main.cpp`) es
+  la versión de respaldo cuando no hay CI.
+- **Aplicar:** el maestro manda `OTA,<mac>` por LoRa. El nodo marca una bandera
+  en NVS (`otaTakePending()`, clave `otapend`, independiente de `CFG_MAGIC`) y
+  reinicia. `runOtaModeIfPending()` (antes de la radio) levanta la **WiFi de
+  mantenimiento** (`cfg.otaSsid`/`otaPass`, se fija en el portal), descarga,
+  verifica el SHA-256 mientras escribe la partición OTA libre y reinicia. Si la
+  WiFi no conecta en 30 s o no hay red → apaga WiFi y sigue el arranque LoRa.
+- La partición por defecto de la placa (`default_8MB.csv`) ya es **dual-OTA**
+  (app0/app1 de 3.19 MB); no hay que tocarla.
+
+> El **último flasheo por USB** debe llevar el cliente OTA **y** la WiFi de
+> mantenimiento configurada en el portal; a partir de ahí, sin cable.
+
+## 6. Cómo extender
 
 **Añadir un comando LoRa:** en `lora_proto.cpp::handleFrame()`, añade una rama
 `else if (!strcmp(t_cmd, "XX"))`, parsea args con `strtok_r(nullptr, ",", &save)`
@@ -117,7 +140,7 @@ y responde con `reply(src, t_seq, body)`. Documenta en `PROTOCOL.md`.
 
 ---
 
-## 6. Relación con nodeIO_master
+## 7. Relación con nodeIO_master
 
 `nodeIO_master` es la **pasarela LoRa ↔ Modbus** (servidor TCP :502 / RTU): descubre
 y adopta nodos, los sondea y publica su IO como el **MAPA A** del contrato
@@ -129,7 +152,7 @@ Solo comparte con este proyecto `src/io.{h,cpp}` y `src/images.h` **byte a byte*
 
 ---
 
-## 7. Notas de hardware
+## 8. Notas de hardware
 
 - **GPIO45 / GPIO46** (relés 3/4) son *strapping pins* del ESP32-S3 (VDD_SPI /
   boot). `ioInit()` los deja en el estado seguro; el hardware externo no debe

@@ -3,17 +3,14 @@
 Versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico). El firmware embebe
 `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
-## Sin publicar — identidad NVS separada
+## 1.3.0 — OTA remota por comando LoRa + identidad NVS separada
 
-- `node_config`: `adopted`, `nodeAddr`, `masterAddr` y el **canal LoRa**
-  (`freq/bw/sf/cr/sync/pwr`) se guardan además como **claves sueltas** en NVS,
-  sin `magic`. Un futuro firmware que suba `CFG_MAGIC` (features nuevas) ya **no**
-  deja al nodo "sin adoptar" ni fuera de su canal.
-- Migración transparente: no sube `CFG_MAGIC` (0xA75AF106). El blob viejo sigue
+- **Identidad NVS separada**: `adopted`, `nodeAddr`, `masterAddr` y el **canal
+  LoRa** (`freq/bw/sf/cr/sync/pwr`) se guardan además como **claves sueltas** en
+  NVS, sin `magic`. Un futuro firmware que suba `CFG_MAGIC` (features nuevas) ya
+  **no** deja al nodo "sin adoptar" ni fuera de su canal. Migración transparente:
+  este flasheo no sube `CFG_MAGIC` (se queda en 0xA75AF106); el blob viejo sigue
   cargando y las claves de identidad se escriben en el primer `configSave()`.
-
-## 1.3.0 — OTA remota por comando LoRa
-
 - **Comando LoRa `OTA,<mac>`** (`src/lora_proto.cpp`, salta el filtro de
   dirección como `DISC`/`ROLLCALL`): el nodo marca una bandera en NVS
   (`otapend`, independiente de `CFG_MAGIC`), responde `ACK,<mac>,OTA` y reinicia.

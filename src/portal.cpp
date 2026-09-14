@@ -15,9 +15,47 @@ static const byte DNS_PORT = 53;
 // --------------------------------------------------------------------------
 static String chk(bool on) { return on ? " checked" : ""; }
 
+// x100 -> texto con 2 decimales, para los campos de ingenieria (eng_min/max, alarmas)
+static String x100(int16_t v) { return String(v / 100.0f, 2); }
+
+static const char *UNIT_LEVEL[4] = { "%", "m", "cm", "mca" };
+static const char *UNIT_FLOW[4]  = { "L/s", "m&sup3;/h", "L/min", "GPM" };
+
+static String unitSelect(const char *field, uint8_t sel, const char *const opts[4]) {
+  String s = "<select name=" + String(field) + ">";
+  for (uint8_t i = 0; i < 4; i++)
+    s += "<option value=" + String(i) + (i == sel ? " selected" : "") + ">" + opts[i] + "</option>";
+  s += "</select>";
+  return s;
+}
+
+// Fieldset completo de un canal con sentido fisico conocido (nivel=0, caudal=1):
+// nombre, calibracion 4-20mA, filtro, totalizacion, alarmas.
+static String channelFieldset(uint8_t i, const char *legend, const char *const unitOpts[4],
+                               const char *almHiLabel, const char *almLoLabel) {
+  const ChannelCfg &c = cfg.ch[i];
+  String p = "ch" + String(i) + "_";   // prefijo de los <input name=...>
+  String h = "<fieldset><legend>" + String(legend) + "</legend>";
+  h += "<label>Nombre</label><input name=" + p + "nm maxlength=15 value='" + String(c.name) + "'>";
+  h += "<div class=row><div><label>Crudo @ 4mA</label><input name=" + p + "rmn type=number min=0 max=4095 value=" + String(c.rawMin) + "></div>";
+  h += "<div><label>Crudo @ 20mA</label><input name=" + p + "rmx type=number min=0 max=4095 value=" + String(c.rawMax) + "></div></div>";
+  h += "<div class=row><div><label>Ingenier&iacute;a en 4mA</label><input name=" + p + "emn type=number step=0.01 value=" + x100(c.engMin) + "></div>";
+  h += "<div><label>Ingenier&iacute;a en 20mA</label><input name=" + p + "emx type=number step=0.01 value=" + x100(c.engMax) + "></div></div>";
+  h += "<label>Unidad</label>" + unitSelect((p + "un").c_str(), c.unit, unitOpts);
+  h += "<label>Filtro EMA (0=sin filtro .. 100=muy suave)</label><input name=" + p + "fl type=number min=0 max=100 value=" + String(c.filter) + ">";
+  h += "<label class=cb><input class=cb type=checkbox name=" + p + "td" + chk(c.totDaily) + ">Totalizar d&iacute;a</label>";
+  h += "<label class=cb><input class=cb type=checkbox name=" + p + "tm" + chk(c.totMonthly) + ">Totalizar mes</label>";
+  h += "<div class=row><div><label>" + String(almHiLabel) + " (vac&iacute;o = sin alarma)</label><input name=" + p + "ah value='" +
+       (c.almHi == CH_ALM_OFF ? "" : x100(c.almHi)) + "'></div>";
+  h += "<div><label>" + String(almLoLabel) + " (vac&iacute;o = sin alarma)</label><input name=" + p + "al value='" +
+       (c.almLo == CH_ALM_OFF ? "" : x100(c.almLo)) + "'></div></div>";
+  h += F("</fieldset>");
+  return h;
+}
+
 static String buildPage() {
   String h;
-  h.reserve(4096);
+  h.reserve(9216);
   h += F("<!doctype html><html><head><meta charset=utf-8>"
          "<meta name=viewport content='width=device-width,initial-scale=1'>"
          "<title>Nodo IO - Config</title><style>"
@@ -82,6 +120,26 @@ static String buildPage() {
   h += "<label>Ancho de pulso ms</label><input name=rpulse type=number min=10 max=60000 value=" + String(cfg.relayPulseMs) + ">";
   h += F("</fieldset>");
 
+  h += channelFieldset(0, "Nivel (canal 1, AI1)", UNIT_LEVEL, "Alarma alta", "Alarma baja");
+  h += channelFieldset(1, "Caudal (canal 2, AI2)", UNIT_FLOW,  "Alarma alta", "Alarma baja");
+
+  h += F("<fieldset><legend>Canales reservados (AI3/AI4)</legend>"
+         "<p style='font-size:12px;color:#aaa;margin:4px 0'>Sin escalar todav&iacute;a "
+         "&mdash; solo se transmite el crudo. El nombre queda guardado para cuando se usen.</p>");
+  h += "<label>Nombre AI3</label><input name=ch2_nm maxlength=15 value='" + String(cfg.ch[2].name) + "'>";
+  h += "<label>Nombre AI4</label><input name=ch3_nm maxlength=15 value='" + String(cfg.ch[3].name) + "'>";
+  h += F("</fieldset>");
+
+  h += F("<fieldset><legend>Entradas digitales (DI1-4)</legend>");
+  for (int i = 0; i < 4; i++)
+    h += "<label>DI" + String(i + 1) + "</label><input name=din" + String(i) + " maxlength=15 value='" + String(cfg.diName[i]) + "'>";
+  h += F("</fieldset>");
+
+  h += F("<fieldset><legend>Sal&iacute;das digitales / rel&eacute;s (DO1-4)</legend>");
+  for (int i = 0; i < 4; i++)
+    h += "<label>DO" + String(i + 1) + "</label><input name=don" + String(i) + " maxlength=15 value='" + String(cfg.doName[i]) + "'>";
+  h += F("</fieldset>");
+
   h += F("<button type=submit>Guardar y reiniciar</button></form></body></html>");
   return h;
 }
@@ -103,7 +161,35 @@ static uint8_t argU8(const char* k, uint8_t def, uint8_t lo, uint8_t hi) {
   return (uint8_t)v;
 }
 
+// Parsea el fieldset completo de un canal (0=nivel, 1=caudal). "vacio" en los
+// campos de alarma = deshabilitada (CH_ALM_OFF); si no, x100 redondeado.
+static void parseChannelFull(uint8_t i) {
+  ChannelCfg &c = cfg.ch[i];
+  String p = "ch" + String(i) + "_";
+  web.arg(p + "nm").toCharArray(c.name, sizeof(c.name));
+  if (web.hasArg(p + "rmn")) c.rawMin = (uint16_t)constrain(web.arg(p + "rmn").toInt(), 0, 4095);
+  if (web.hasArg(p + "rmx")) c.rawMax = (uint16_t)constrain(web.arg(p + "rmx").toInt(), 0, 4095);
+  if (web.hasArg(p + "emn")) c.engMin = (int16_t)lroundf(web.arg(p + "emn").toFloat() * 100.0f);
+  if (web.hasArg(p + "emx")) c.engMax = (int16_t)lroundf(web.arg(p + "emx").toFloat() * 100.0f);
+  c.unit   = argU8((p + "un").c_str(), c.unit, 0, 3);
+  c.filter = argU8((p + "fl").c_str(), c.filter, 0, 100);
+  c.totDaily   = web.hasArg(p + "td");
+  c.totMonthly = web.hasArg(p + "tm");
+  String ah = web.arg(p + "ah"), al = web.arg(p + "al");
+  c.almHi = (ah.length() == 0) ? CH_ALM_OFF : (int16_t)lroundf(ah.toFloat() * 100.0f);
+  c.almLo = (al.length() == 0) ? CH_ALM_OFF : (int16_t)lroundf(al.toFloat() * 100.0f);
+}
+
 static void handleSave() {
+  parseChannelFull(0);
+  parseChannelFull(1);
+  web.arg("ch2_nm").toCharArray(cfg.ch[2].name, sizeof(cfg.ch[2].name));
+  web.arg("ch3_nm").toCharArray(cfg.ch[3].name, sizeof(cfg.ch[3].name));
+  for (int i = 0; i < 4; i++) {
+    web.arg("din" + String(i)).toCharArray(cfg.diName[i], sizeof(cfg.diName[i]));
+    web.arg("don" + String(i)).toCharArray(cfg.doName[i], sizeof(cfg.doName[i]));
+  }
+
   cfg.nodeAddr   = argU8("naddr", cfg.nodeAddr, 1, 254);
   cfg.masterAddr = argU8("maddr", cfg.masterAddr, 0, 254);
   if (web.hasArg("atmo")) cfg.adoptTimeoutS = (uint16_t)constrain(web.arg("atmo").toInt(), 0, 65535);

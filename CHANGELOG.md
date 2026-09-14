@@ -3,6 +3,20 @@
 Versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico). El firmware embebe
 `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.4.2 — IP fija + DNS para la WiFi de mantenimiento
+
+- Portal cautivo: la sección "WiFi de mantenimiento (OTA remota)" gana **IP
+  fija** (vacío = DHCP), **Gateway**, **Máscara**, **DNS 1**, **DNS 2**.
+  Con DHCP no cambia nada (el router entrega el DNS solo); con IP fija, sin
+  estos campos, `WiFi.config()` dejaba `dns1`/`dns2` en `0.0.0.0` y el nodo
+  quedaba sin ningún DNS — rompía la resolución de `github.com` para el OTA.
+  Mismo bug ya corregido en `nodeIO_master v1.5.3` (ver `ORCHESTRATION`).
+- DNS 1 vacío con IP fija configurada usa el propio Gateway (la mayoría de
+  los routers hacen de proxy DNS); DNS 2 vacío usa `8.8.8.8` de respaldo.
+- `node_config.h/.cpp`: `otaIp/otaGw/otaMask/otaDns1/otaDns2` (magic
+  `0xA75AF108`). `main.cpp`: `wifiConfigStaticIfSet()` compartido entre el
+  chequeo manual (F2/serial) y el arranque en modo OTA por comando LoRa.
+
 ## 1.4.1 — comando serial "buscar actualizacion"
 
 - Alternativa de banco al F2 mantenido 4-5s: escribir `buscar actualizacion`

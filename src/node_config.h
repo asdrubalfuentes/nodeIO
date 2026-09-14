@@ -47,6 +47,17 @@ struct NodeConfig {
   // --- WiFi de mantenimiento (solo para OTA por comando; ver lora_proto OTA) ---
   char     otaSsid[33];     // "" = OTA remota deshabilitada
   char     otaPass[65];
+  // IP fija (otaIp vacio = DHCP). Con DHCP el DNS lo entrega el router solo;
+  // con IP fija hay que darlo explicito o WiFi.config() lo deja en 0.0.0.0 y
+  // el nodo queda sin DNS (rompe la resolucion de github.com para OTA -- ver
+  // el mismo bug ya corregido en nodeIO_master v1.5.3). otaDns1 vacio con
+  // otaIp fijado usa otaGw como DNS (la mayoria de los routers hacen de
+  // proxy DNS); otaDns2 es respaldo opcional.
+  char     otaIp[16];
+  char     otaGw[16];
+  char     otaMask[16];
+  char     otaDns1[16];
+  char     otaDns2[16];
 
   // --- Escalado/totalizacion/alarma por canal analogico + tags de DI/DO ---
   // (cambio de rumbo 2026-09: escalar y totalizar en el nodo, no en el PLC)

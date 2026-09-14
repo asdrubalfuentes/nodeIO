@@ -98,6 +98,11 @@ static String buildPage() {
   h += F("<label>SSID (vac&iacute;o = OTA remota deshabilitada)</label>");
   h += "<input name=otassid maxlength=32 value='" + String(cfg.otaSsid) + "'>";
   h += "<label>Clave</label><input name=otapass maxlength=64 value='" + String(cfg.otaPass) + "'>";
+  h += "<label>IP fija (vac&iacute;o = DHCP)</label><input name=otaip maxlength=15 value='" + String(cfg.otaIp) + "'>";
+  h += "<div class=row><div><label>Gateway</label><input name=otagw maxlength=15 value='" + String(cfg.otaGw) + "'></div>";
+  h += "<div><label>M&aacute;scara</label><input name=otamask maxlength=15 value='" + String(cfg.otaMask) + "'></div></div>";
+  h += "<div class=row><div><label>DNS 1</label><input name=otadns1 maxlength=15 value='" + String(cfg.otaDns1) + "'></div>";
+  h += "<div><label>DNS 2</label><input name=otadns2 maxlength=15 value='" + String(cfg.otaDns2) + "'></div></div>";
   h += F("</fieldset>");
 
   h += F("<fieldset><legend>LoRa (debe coincidir con el maestro)</legend>");
@@ -199,6 +204,11 @@ static void handleSave() {
   web.arg("appass").toCharArray(cfg.apPass, sizeof(cfg.apPass));
   web.arg("otassid").toCharArray(cfg.otaSsid, sizeof(cfg.otaSsid));
   web.arg("otapass").toCharArray(cfg.otaPass, sizeof(cfg.otaPass));
+  web.arg("otaip").toCharArray(cfg.otaIp, sizeof(cfg.otaIp));
+  web.arg("otagw").toCharArray(cfg.otaGw, sizeof(cfg.otaGw));
+  web.arg("otamask").toCharArray(cfg.otaMask, sizeof(cfg.otaMask));
+  web.arg("otadns1").toCharArray(cfg.otaDns1, sizeof(cfg.otaDns1));
+  web.arg("otadns2").toCharArray(cfg.otaDns2, sizeof(cfg.otaDns2));
 
   if (web.hasArg("lfreq")) cfg.loraFreq = web.arg("lfreq").toFloat();
   if (web.hasArg("lbw"))   cfg.loraBw   = web.arg("lbw").toFloat();

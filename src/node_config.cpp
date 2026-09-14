@@ -4,7 +4,7 @@
 NodeConfig cfg;
 
 static const char*    NVS_NS    = "nodeio";
-static const uint32_t CFG_MAGIC = 0xA75AF107;   // bump if the struct layout changes
+static const uint32_t CFG_MAGIC = 0xA75AF108;   // bump if the struct layout changes
                                                 // 105: adoptTimeoutS default 0 (el nodo ya no
                                                 //      se des-adopta por silencio; ver ROLLCALL)
                                                 // 106: + otaSsid/otaPass (WiFi de mantenimiento OTA)
@@ -13,6 +13,10 @@ static const uint32_t CFG_MAGIC = 0xA75AF107;   // bump if the struct layout cha
                                                 //      campos nuevos a fabrica -- la identidad
                                                 //      (adopted/nodeAddr/canal LoRa) sobrevive por
                                                 //      el split de identityLoad/Save de abajo.
+                                                // 108: + otaIp/otaGw/otaMask/otaDns1/otaDns2 (IP
+                                                //      fija opcional para la WiFi de mantenimiento;
+                                                //      ver nodeIO_master v1.5.3 -- sin DNS explicito
+                                                //      la IP fija deja el nodo sin resolver nombres)
 
 // --- Identidad / emparejamiento -------------------------------------------
 // Estos campos se guardan TAMBIEN como claves sueltas (sin magic): sobreviven a

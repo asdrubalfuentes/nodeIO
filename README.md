@@ -116,6 +116,11 @@ Módulo `src/ota_update.{h,cpp}` + CI `.github/workflows/release.yml` (modelo de
   mantenimiento** (`cfg.otaSsid`/`otaPass`, se fija en el portal), descarga,
   verifica el SHA-256 mientras escribe la partición OTA libre y reinicia. Si la
   WiFi no conecta en 30 s o no hay red → apaga WiFi y sigue el arranque LoRa.
+- **WiFi de mantenimiento — IP fija opcional:** el portal también acepta
+  **IP fija + Gateway/Máscara/DNS 1/DNS 2** (vacío = DHCP). Con IP fija hay
+  que dar el DNS explícito o el nodo queda sin resolver `github.com`
+  (`wifiConfigStaticIfSet()`, mismo bug ya corregido en
+  `nodeIO_master v1.5.3`).
 - La partición por defecto de la placa (`default_8MB.csv`) ya es **dual-OTA**
   (app0/app1 de 3.19 MB); no hay que tocarla.
 - **Chequeo manual (banco / puesta en marcha)**, sin esperar el comando LoRa

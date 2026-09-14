@@ -18,10 +18,13 @@
 // sobreescribe desde el tag; sin CI vale este literal.
 //   1.4.0  escalado/filtro/totalizador/alarma en el nodo (cambio de rumbo v3)
 //   1.4.1  comando serial "buscar actualizacion" (alternativa al F2 mantenido)
+//   1.4.2  IP fija opcional + DNS para la WiFi de mantenimiento (portal). Sin
+//          DNS explicito, IP fija dejaba al nodo sin resolver github.com --
+//          mismo bug ya corregido en nodeIO_master v1.5.3
 #ifdef FW_VERSION_OVERRIDE
 #define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#define FW_SEMVER "1.4.1"
+#define FW_SEMVER "1.4.2"
 #endif
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };
@@ -78,6 +81,23 @@ static void otaOled(ota::Phase ph, int pct, const char *d) {
   display.display();
 }
 
+// IP fija (cfg.otaIp no vacio) para la WiFi de mantenimiento: sin dns1/dns2,
+// WiFi.config() los deja en 0.0.0.0 y el nodo queda sin ningun DNS -- falla
+// resolver github.com (mismo bug ya corregido en nodeIO_master v1.5.3). Debe
+// llamarse ANTES de WiFi.begin(). Con DHCP (otaIp vacio, lo normal) no hace
+// nada -- el router entrega su propio DNS solo.
+static void wifiConfigStaticIfSet() {
+  if (!cfg.otaIp[0]) return;
+  IPAddress ip, gw, mask, dns1, dns2;
+  ip.fromString(cfg.otaIp);
+  gw.fromString(cfg.otaGw[0] ? cfg.otaGw : cfg.otaIp);
+  if (!mask.fromString(cfg.otaMask[0] ? cfg.otaMask : "255.255.255.0"))
+    mask = IPAddress(255, 255, 255, 0);
+  if (!(cfg.otaDns1[0] && dns1.fromString(cfg.otaDns1))) dns1 = gw;
+  if (!(cfg.otaDns2[0] && dns2.fromString(cfg.otaDns2))) dns2 = IPAddress(8, 8, 8, 8);
+  WiFi.config(ip, gw, mask, dns1, dns2);
+}
+
 // F2 mantenido 4-5s (ver loop()): fuerza un chequeo OTA ya, sin esperar el
 // comando LoRa del maestro -- util en banco/puesta en marcha. Reutiliza el
 // mismo modulo ota:: y el mismo callback otaOled() del arranque.
@@ -99,6 +119,7 @@ static void runOtaCheckNow() {
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
+  wifiConfigStaticIfSet();
   WiFi.begin(cfg.otaSsid, cfg.otaPass);
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) delay(200);
@@ -211,6 +232,7 @@ static void runOtaModeIfPending() {
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
+  wifiConfigStaticIfSet();
   WiFi.begin(cfg.otaSsid, cfg.otaPass);
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) delay(200);

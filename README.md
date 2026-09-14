@@ -118,6 +118,16 @@ Módulo `src/ota_update.{h,cpp}` + CI `.github/workflows/release.yml` (modelo de
   WiFi no conecta en 30 s o no hay red → apaga WiFi y sigue el arranque LoRa.
 - La partición por defecto de la placa (`default_8MB.csv`) ya es **dual-OTA**
   (app0/app1 de 3.19 MB); no hay que tocarla.
+- **Chequeo manual (banco / puesta en marcha)**, sin esperar el comando LoRa
+  del maestro — ambos reusan `runOtaCheckNow()` y muestran el progreso en el
+  OLED (`otaOled()`):
+  - **F2 mantenido 4-5s** (modo normal, toque corto cicla las pantallas de
+    diagnóstico por canal).
+  - **Comando por Serial/USB** (115200 baud): escribir `buscar actualizacion`
+    (o `ota`) + Enter. Útil con el nodo solo conectado por USB, o para
+    automatizarlo desde un script.
+  - Ambos requieren `cfg.otaSsid` configurada en el portal; si no, avisan por
+    OLED/Serial en vez de intentar conectar.
 
 > El **último flasheo por USB** debe llevar el cliente OTA **y** la WiFi de
 > mantenimiento configurada en el portal; a partir de ahí, sin cable.

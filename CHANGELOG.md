@@ -3,6 +3,28 @@
 Versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico). El firmware embebe
 `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.4.0 — escalado/totalizador/alarma en el nodo (cambio de rumbo)
+
+El nodo ahora escala, filtra, totaliza y discretiza alarma de nivel/caudal —
+antes era trabajo del PLC. Ver `ORCHESTRATION` para el detalle del contrato.
+
+- `channels.{h,cpp}` (nuevo): escala raw→ingeniería + filtro EMA (misma fórmula
+  del contrato), totalizador día/mes en m³ (con factor `k` por unidad),
+  alarmas de umbral alto/bajo. Acumulados persistidos en NVS (flush cada 60s).
+  El nodo **nunca** cierra día/mes solo (sin hora confiable) — expone
+  `channelsCloseDay()`/`CloseMonth()` para que el gateway lo dispare.
+- `node_config`: `ChannelCfg[4]` (nombre, calibración 4-20mA, unidad, filtro,
+  totalizar día/mes, límites de alarma) + nombres de DI/DO. `CFG_MAGIC`
+  106→107 (identidad de emparejamiento sobrevive, como siempre).
+- Protocolo LoRa (`PROTO_FW` 1.2026.007): `ST` ahora lleva nivel/caudal
+  escalados, los 4 acumulados y `almBits`; comandos nuevos `CD`/`CM` (cierre
+  de día/mes, los dispara el gateway).
+- Portal cautivo: configuración completa por canal (nivel/caudal) + nombres
+  DI/DO.
+- OLED: pantallas de diagnóstico por canal (barra 0-100% + valor escalado),
+  navegables con F2 corto. F2 mantenido 4-5s fuerza un chequeo OTA ya.
+- Caudal fijo en **m³/h** (antes L/s) en toda la cadena.
+
 ## 1.3.0 — OTA remota por comando LoRa + identidad NVS separada
 
 - **Identidad NVS separada**: `adopted`, `nodeAddr`, `masterAddr` y el **canal

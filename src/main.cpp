@@ -12,14 +12,14 @@
 // Remote IO Node - by Aysafi
 // Responds over the LoRa link to a master: reports the 4 analog + 4 digital
 // inputs and writes the 4 relay outputs. Configured through a captive portal.
-#define FW_VERSION "V1.2026.006"
+#define FW_VERSION "V1.2026.007"
 
 // Version semver (X.Y.Z) para el canal OTA (GitHub Releases). El CI la
 // sobreescribe desde el tag; sin CI vale este literal.
 #ifdef FW_VERSION_OVERRIDE
 #define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#define FW_SEMVER "1.3.0"
+#define FW_SEMVER "1.4.0"
 #endif
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };

@@ -26,8 +26,14 @@ enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };
 static Mode mode = MODE_NORMAL;
 
 static uint32_t btn1DownSince = 0;   // BUTTON_1 long-press -> open portal
+static uint32_t btn2DownSince = 0;   // BUTTON_2 (F2): toque corto = ciclar pantalla,
+static bool     btn2OtaFired  = false;  //   mantenido 4-5s = forzar chequeo OTA
+static uint8_t  diagScreen    = 0;   // 0 = pantalla normal, 1 = nivel, 2 = caudal
 static uint32_t lastDrawMs    = 0;
 static uint32_t last1sTickMs  = 0;
+
+static const char *UNIT_LEVEL_S[4] = { "%", "m", "cm", "mca" };
+static const char *UNIT_FLOW_S[4]  = { "L/s", "m3/h", "L/min", "GPM" };
 
 // ---------------------------------------------------------------------------
 static void splash() {
@@ -67,6 +73,81 @@ static void otaOled(ota::Phase ph, int pct, const char *d) {
   }
   display.drawString(0, 22, m);
   if (d && *d) display.drawString(0, 40, d);
+  display.display();
+}
+
+// F2 mantenido 4-5s (ver loop()): fuerza un chequeo OTA ya, sin esperar el
+// comando LoRa del maestro -- util en banco/puesta en marcha. Reutiliza el
+// mismo modulo ota:: y el mismo callback otaOled() del arranque.
+static void runOtaCheckNow() {
+  if (cfg.otaSsid[0] == '\0') {
+    display.clear(); display.setFont(ArialMT_Plain_10);
+    display.drawString(0, 0,  "MODO OTA (F2)");
+    display.drawString(0, 22, "Sin WiFi de");
+    display.drawString(0, 34, "mantenimiento configurada");
+    display.display();
+    delay(1500);
+    return;
+  }
+  loraStandby();
+  display.clear(); display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 0,  "MODO OTA (F2)");
+  display.drawString(0, 22, String("WiFi: ") + cfg.otaSsid);
+  display.display();
+
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(cfg.otaSsid, cfg.otaPass);
+  uint32_t t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) delay(200);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    ota::Config oc;
+    oc.owner = "asdrubalfuentes";
+    oc.repo  = "nodeIO";
+    oc.currentVersion = FW_SEMVER;
+    ota::Result r = ota::run(oc, otaOled);      // si actualiza, reinicia aqui dentro
+    if (r.ok && !r.hasUpdate) { otaOled(ota::Phase::UpToDate, 0, "al dia"); delay(1200); }
+  } else {
+    otaOled(ota::Phase::Error, 0, "sin WiFi");
+    delay(1500);
+  }
+  WiFi.disconnect(true, true);
+  WiFi.mode(WIFI_OFF);
+  loraBegin();                     // retoma LoRa normal (si no se reinicio por la actualizacion)
+}
+
+// Barra 0-100% (posicion del crudo entre rawMin/rawMax, el lazo 4-20mA
+// calibrado) + valor ya escalado en su unidad de ingenieria. ch = 0 (nivel)
+// o 1 (caudal) -- los unicos con calibracion propia hoy.
+static void drawChannelScreen(uint8_t ch) {
+  if (millis() - lastDrawMs < 200) return;
+  lastDrawMs = millis();
+
+  const ChannelCfg &c = cfg.ch[ch];
+  uint16_t raw = ioReadAnalog(ch);
+  float span = (float)c.rawMax - (float)c.rawMin;
+  int pct = (span != 0) ? (int)lroundf(((float)raw - c.rawMin) / span * 100.0f) : 0;
+  if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 0, String(c.name[0] ? c.name : (ch == 0 ? "Nivel" : "Caudal")));
+
+  const int barX = 0, barY = 14, barW = 122, barH = 12;
+  display.drawRect(barX, barY, barW, barH);
+  display.fillRect(barX + 1, barY + 1, (barW - 2) * pct / 100, barH - 2);
+  char pctbuf[8]; snprintf(pctbuf, sizeof(pctbuf), "%d%%", pct);
+  display.drawString(barW / 2 - 8, barY + 1, pctbuf);
+
+  const char *u = (ch == 0) ? UNIT_LEVEL_S[c.unit] : UNIT_FLOW_S[c.unit];
+  char l[32]; snprintf(l, sizeof(l), "%.2f %s", chLive[ch].eng / 100.0f, u);
+  display.setFont(ArialMT_Plain_16);
+  display.drawString(0, 30, l);
+
+  display.setFont(ArialMT_Plain_10);
+  snprintf(l, sizeof(l), "raw:%u   F2=siguiente", raw);
+  display.drawString(0, 52, l);
   display.display();
 }
 
@@ -216,6 +297,22 @@ void loop() {
     }
   }
 
+  // BUTTON_2 (F2): toque corto = ciclar pantalla de diagnostico (normal ->
+  // nivel -> caudal -> normal); mantenido 4-5s = forzar chequeo OTA ya.
+  if (mode == MODE_NORMAL) {
+    if (digitalRead(PIN_BUTTON_2) == LOW) {
+      if (btn2DownSince == 0) btn2DownSince = millis();
+      else if (!btn2OtaFired && millis() - btn2DownSince > 4000) {
+        btn2OtaFired = true;
+        runOtaCheckNow();
+      }
+    } else {
+      if (btn2DownSince != 0 && !btn2OtaFired) diagScreen = (diagScreen + 1) % 3;
+      btn2DownSince = 0;
+      btn2OtaFired  = false;
+    }
+  }
+
   if (mode == MODE_PORTAL) {
     portalLoop();
     drawPortalScreen();
@@ -236,5 +333,7 @@ void loop() {
     last1sTickMs = millis();
     channelsTick1s();               // integra el totalizador, 1x/seg
   }
-  drawStatusScreen();
+  if (diagScreen == 1)      drawChannelScreen(0);   // nivel
+  else if (diagScreen == 2) drawChannelScreen(1);   // caudal
+  else                      drawStatusScreen();
 }

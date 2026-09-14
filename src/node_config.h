@@ -1,6 +1,24 @@
 #pragma once
 #include <Arduino.h>
 
+// Calibracion/config de un canal analogico (AI1..AI4). Solo AI1 (nivel) y AI2
+// (caudal) tienen sentido hoy, pero se deja generico para las 4 entradas.
+// Ver ORCHESTRATION/REGISTER_MAP.md §5 (formula) y §7 (factor k del totalizador).
+struct ChannelCfg {
+  char     name[16];      // etiqueta libre ("Nivel pozo", "Caudal salida"...)
+  uint16_t rawMin;        // cuentas ADC en el extremo bajo del lazo 4-20mA
+  uint16_t rawMax;        // cuentas ADC en el extremo alto
+  int16_t  engMin;        // valor de ingenieria x100 en rawMin
+  int16_t  engMax;        // valor de ingenieria x100 en rawMax
+  uint8_t  unit;          // nivel: 0=% 1=m 2=cm 3=mca | caudal: 0=L/s 1=m3/h 2=L/min 3=GPM
+  uint8_t  filter;        // EMA 0..100 (0 = sin filtro), misma formula que el contrato
+  bool     totDaily;      // totalizar acumulado del dia (solo tiene sentido en caudal)
+  bool     totMonthly;    // totalizar acumulado del mes en curso
+  int16_t  almHi;         // limite alto x100 (caudal); 0x7FFF = deshabilitado
+  int16_t  almLo;         // limite bajo x100 (nivel);  0x7FFF = deshabilitado
+};
+#define CH_ALM_OFF  ((int16_t)0x7FFF)
+
 // Persistent node configuration (NVS namespace "nodeio", stored as one blob).
 // Replaces the never-implemented rescueFlashConfig()/saveFlashConfig() stubs.
 struct NodeConfig {
@@ -29,6 +47,12 @@ struct NodeConfig {
   // --- WiFi de mantenimiento (solo para OTA por comando; ver lora_proto OTA) ---
   char     otaSsid[33];     // "" = OTA remota deshabilitada
   char     otaPass[65];
+
+  // --- Escalado/totalizacion/alarma por canal analogico + tags de DI/DO ---
+  // (cambio de rumbo 2026-09: escalar y totalizar en el nodo, no en el PLC)
+  ChannelCfg ch[4];
+  char       diName[4][16];
+  char       doName[4][16];
 };
 
 extern NodeConfig cfg;

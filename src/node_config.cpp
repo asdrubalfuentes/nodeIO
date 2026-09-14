@@ -4,10 +4,15 @@
 NodeConfig cfg;
 
 static const char*    NVS_NS    = "nodeio";
-static const uint32_t CFG_MAGIC = 0xA75AF106;   // bump if the struct layout changes
+static const uint32_t CFG_MAGIC = 0xA75AF107;   // bump if the struct layout changes
                                                 // 105: adoptTimeoutS default 0 (el nodo ya no
                                                 //      se des-adopta por silencio; ver ROLLCALL)
                                                 // 106: + otaSsid/otaPass (WiFi de mantenimiento OTA)
+                                                // 107: + ch[4]/diName/doName (escalado+totalizador
+                                                //      en el nodo). El bump reinicia SOLO estos
+                                                //      campos nuevos a fabrica -- la identidad
+                                                //      (adopted/nodeAddr/canal LoRa) sobrevive por
+                                                //      el split de identityLoad/Save de abajo.
 
 // --- Identidad / emparejamiento -------------------------------------------
 // Estos campos se guardan TAMBIEN como claves sueltas (sin magic): sobreviven a
@@ -62,6 +67,38 @@ void configFactory() {
   cfg.adopted      = false;
   cfg.otaSsid[0]   = '\0';    // OTA remota deshabilitada hasta configurar la red de mantenimiento
   cfg.otaPass[0]   = '\0';
+
+  // Canal 0 = Nivel, canal 1 = Caudal (los dos que existen hoy en el pozo);
+  // 2/3 quedan reservados/deshabilitados hasta que haya sensores ahi.
+  for (uint8_t i = 0; i < 4; i++) {
+    ChannelCfg &c = cfg.ch[i];
+    c.name[0]    = '\0';
+    c.rawMin     = 800;
+    c.rawMax     = 4000;
+    c.engMin     = 0;
+    c.engMax     = 10000;
+    c.unit       = 0;
+    c.filter     = 15;
+    c.totDaily   = false;
+    c.totMonthly = false;
+    c.almHi      = CH_ALM_OFF;
+    c.almLo      = CH_ALM_OFF;
+  }
+  strncpy(cfg.ch[0].name, "Nivel", sizeof(cfg.ch[0].name));
+  cfg.ch[0].unit  = 1;              // metros
+  cfg.ch[0].almLo = 500;            // 5,00 m -- nivel bajo de referencia, ajustar en terreno
+
+  strncpy(cfg.ch[1].name, "Caudal", sizeof(cfg.ch[1].name));
+  cfg.ch[1].engMax     = 5000;      // 0..50,00 L/s
+  cfg.ch[1].unit       = 0;         // L/s
+  cfg.ch[1].totDaily   = true;
+  cfg.ch[1].totMonthly = true;
+  cfg.ch[1].almHi      = 4500;      // 45,00 L/s -- caudal alto de referencia
+
+  for (uint8_t i = 0; i < 4; i++) {
+    snprintf(cfg.diName[i], sizeof(cfg.diName[i]), "DI%u", (unsigned)(i + 1));
+    snprintf(cfg.doName[i], sizeof(cfg.doName[i]), "RO%u", (unsigned)(i + 1));
+  }
 }
 
 String nodeMac() {

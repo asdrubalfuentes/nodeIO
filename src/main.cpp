@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include "images.h"
 #include "io.h"
+#include "channels.h"
 #include "node_config.h"
 #include "portal.h"
 #include "lora_proto.h"
@@ -26,6 +27,7 @@ static Mode mode = MODE_NORMAL;
 
 static uint32_t btn1DownSince = 0;   // BUTTON_1 long-press -> open portal
 static uint32_t lastDrawMs    = 0;
+static uint32_t last1sTickMs  = 0;
 
 // ---------------------------------------------------------------------------
 static void splash() {
@@ -189,6 +191,7 @@ void setup() {
   configLoad();
   runOtaModeIfPending();          // si el maestro pidio OTA: actualiza y reinicia
   ioInit(cfg.relayEnable, cfg.relaySafe);
+  channelsInit();                 // recupera acumulados del dia/mes desde NVS
   splash();
 
   if (!loraBegin()) {
@@ -228,5 +231,10 @@ void loop() {
   loraLoop();
   ioServicePulses(cfg.relaySafe);
   serviceLocalInputs();
+  channelsService();               // escala + filtra EMA, cada vuelta
+  if (millis() - last1sTickMs >= 1000) {
+    last1sTickMs = millis();
+    channelsTick1s();               // integra el totalizador, 1x/seg
+  }
   drawStatusScreen();
 }

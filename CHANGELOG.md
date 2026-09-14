@@ -3,6 +3,14 @@
 Versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico). El firmware embebe
 `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.4.1 — comando serial "buscar actualizacion"
+
+- Alternativa de banco al F2 mantenido 4-5s: escribir `buscar actualizacion`
+  (o `ota`) por Serial/USB dispara el mismo `runOtaCheckNow()` (requiere
+  `cfg.otaSsid` configurado en el portal; si no, avisa por OLED como ya
+  hacía el botón). Útil con el nodo conectado solo por USB o para
+  automatizar el chequeo desde un script.
+
 ## 1.4.0 — escalado/totalizador/alarma en el nodo (cambio de rumbo)
 
 El nodo ahora escala, filtra, totaliza y discretiza alarma de nivel/caudal —

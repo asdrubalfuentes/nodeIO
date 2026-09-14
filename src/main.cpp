@@ -16,10 +16,12 @@
 
 // Version semver (X.Y.Z) para el canal OTA (GitHub Releases). El CI la
 // sobreescribe desde el tag; sin CI vale este literal.
+//   1.4.0  escalado/filtro/totalizador/alarma en el nodo (cambio de rumbo v3)
+//   1.4.1  comando serial "buscar actualizacion" (alternativa al F2 mantenido)
 #ifdef FW_VERSION_OVERRIDE
 #define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#define FW_SEMVER "1.4.0"
+#define FW_SEMVER "1.4.1"
 #endif
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };
@@ -115,6 +117,44 @@ static void runOtaCheckNow() {
   WiFi.disconnect(true, true);
   WiFi.mode(WIFI_OFF);
   loraBegin();                     // retoma LoRa normal (si no se reinicio por la actualizacion)
+}
+
+// ---- comando por Serial: "buscar actualizacion" ---------------------------
+// Alternativa de banco al F2 mantenido 4-5s: util con el nodo solo conectado
+// por USB (sin acceso al boton, o automatizando desde un script). Requiere
+// cfg.otaSsid configurado en el portal -- runOtaCheckNow() ya avisa por OLED
+// si no lo esta.
+static bool serialCmdIs(const char *line, const char *cmd) {
+  while (*line == ' ') line++;
+  size_t n = strlen(cmd);
+  if (strncasecmp(line, cmd, n) != 0) return false;
+  char c = line[n];
+  return c == '\0' || c == '\r' || c == '\n' || c == ' ';
+}
+
+static void serviceSerialCommands() {
+  static char buf[64];
+  static uint8_t len = 0;
+
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (len > 0) {
+        buf[len] = '\0';
+        len = 0;
+        if (serialCmdIs(buf, "buscar actualizacion") ||
+            serialCmdIs(buf, "buscar actualizaci\xC3\xB3n") ||   // con tilde (UTF-8)
+            serialCmdIs(buf, "ota")) {
+          Serial.println("[serial] buscar actualizacion -> forzando chequeo OTA");
+          runOtaCheckNow();
+        } else {
+          Serial.printf("[serial] comando no reconocido: \"%s\" (probar: buscar actualizacion)\n", buf);
+        }
+      }
+      continue;
+    }
+    if (len < sizeof(buf) - 1) buf[len++] = c;
+  }
 }
 
 // Barra 0-100% (posicion del crudo entre rawMin/rawMax, el lazo 4-20mA
@@ -326,6 +366,7 @@ void loop() {
   }
 
   loraLoop();
+  serviceSerialCommands();
   ioServicePulses(cfg.relaySafe);
   serviceLocalInputs();
   channelsService();               // escala + filtra EMA, cada vuelta

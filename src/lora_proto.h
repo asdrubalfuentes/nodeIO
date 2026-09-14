@@ -9,11 +9,22 @@
 //   seq     : rolling id from the master, echoed back in the reply
 //
 // Master -> node commands
-//   RD                         -> reply  ST,<a1..a4>,<d1..d4>,<o1..o4>
+//   RD                         -> reply  ST,<...>  (ver formato abajo)
 //   WR,<r1>,<r2>,<r3>,<r4>     -> set relays (0/1, or '-' = keep), reply ST
 //   WP,<idx>,<ms>              -> pulse relay idx (1..4) for ms,       reply ST
+//   CD[,<mask>]                -> cierra el acumulado del DIA (mask, bit i = canal i;
+//                                  sin mask = 0x0F = todos). Lo manda el gateway/HMI,
+//                                  que si tienen hora real -- el nodo no cierra solo.
+//   CM[,<mask>]                -> idem, cierre de MES.
 //   PING                       -> reply  PONG,<uptime_s>,<rssi_dBm>
 // Errors: ERR,<FMT|CMD|DIS|RANGE>
+//
+// ST,<ai1>,<ai2>,<ai3>,<ai4>,<di1>,<di2>,<di3>,<di4>,<ro1..4|x>,
+//    <eng0>,<eng1>,<accDia0>,<accMes0>,<accDia1>,<accMes1>,<almBits>
+//   ai1..4   : crudo ADC 0..4095 (canal 2/3 sin escalar, quedan reservados)
+//   eng0/1   : nivel/caudal ya escalados x100, filtrados (EMA) -- ver channels.h
+//   accDia/Mes: acumulado del dia/mes en curso, m3 x1000 (entero)
+//   almBits  : bit0 nivel.almLo · bit1 nivel.almHi · bit2 caudal.almLo · bit3 caudal.almHi
 // ---------------------------------------------------------------------------
 
 struct LoraStats {

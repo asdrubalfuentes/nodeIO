@@ -1,6 +1,7 @@
 #include "lora_proto.h"
 #include "node_config.h"
 #include "io.h"
+#include "channels.h"
 #include <RadioLib.h>
 #include <CRC32.h>
 
@@ -9,7 +10,8 @@ extern SX1262 radio;
 
 LoraStats loraStats = {0, 0, 0, 0, 0, "", 0};
 
-#define PROTO_FW "1.2026.006"   // + ROLLCALL/HERE; + comando OTA (reinicio a modo actualizacion)
+#define PROTO_FW "1.2026.007"   // + ST trae escalado/acumulados/alarma (ch0=nivel,ch1=caudal);
+                                // + comandos CD/CM (cierre de dia/mes, dispara el gateway)
 
 static volatile bool rxFlag = false;
 static const uint8_t BCAST  = 255;
@@ -57,15 +59,25 @@ static void reply(uint8_t dst, const char* seq, const char* body) {
   if (n > 0 && n < (int)sizeof(text)) appendCrcAndSend(text, n);
 }
 
+// Campos nuevos (desde PROTO_FW 1.2026.007): escalado + acumulados + alarma
+// de los canales 0 (nivel) y 1 (caudal) -- los unicos con sentido hoy. 2/3
+// siguen solo-crudo, igual que antes. Acumulados van x1000 (m3) como entero,
+// para no depender de locale/precision de punto flotante en el texto.
 static void buildStatus(char* out, size_t n) {
+  uint8_t almBits = (chLive[0].almLo ? 1 : 0) | (chLive[0].almHi ? 2 : 0)
+                  | (chLive[1].almLo ? 4 : 0) | (chLive[1].almHi ? 8 : 0);
   snprintf(out, n,
-    "ST,%u,%u,%u,%u,%u,%u,%u,%u,%c,%c,%c,%c",
+    "ST,%u,%u,%u,%u,%u,%u,%u,%u,%c,%c,%c,%c,%d,%d,%ld,%ld,%ld,%ld,%u",
     ioReadAnalog(0), ioReadAnalog(1), ioReadAnalog(2), ioReadAnalog(3),
     ioReadDigital(0), ioReadDigital(1), ioReadDigital(2), ioReadDigital(3),
     (cfg.relayEnable & 1) ? ('0' + ioGetRelay(0)) : 'x',
     (cfg.relayEnable & 2) ? ('0' + ioGetRelay(1)) : 'x',
     (cfg.relayEnable & 4) ? ('0' + ioGetRelay(2)) : 'x',
-    (cfg.relayEnable & 8) ? ('0' + ioGetRelay(3)) : 'x');
+    (cfg.relayEnable & 8) ? ('0' + ioGetRelay(3)) : 'x',
+    chLive[0].eng, chLive[1].eng,
+    lroundf(chLive[0].accDia * 1000.0f), lroundf(chLive[0].accMes * 1000.0f),
+    lroundf(chLive[1].accDia * 1000.0f), lroundf(chLive[1].accMes * 1000.0f),
+    almBits);
 }
 
 // ---- provisioning (discovery / adoption) ------------------------------
@@ -219,6 +231,18 @@ static void handleFrame(char* text) {
     if (!ioPulseRelay(idx - 1, (uint16_t)ms, cfg.relayEnable, cfg.relaySafe)) {
       reply(src, t_seq, "ERR,DIS"); return;
     }
+    buildStatus(body, sizeof(body));
+    reply(src, t_seq, body);
+
+  } else if (!strcmp(t_cmd, "CD")) {          // cierre de dia -- lo dispara el gateway (con hora real)
+    char* a_mask = strtok_r(nullptr, ",", &save);
+    channelsCloseDay(a_mask ? (uint8_t)atoi(a_mask) : 0x0F);
+    buildStatus(body, sizeof(body));
+    reply(src, t_seq, body);
+
+  } else if (!strcmp(t_cmd, "CM")) {          // cierre de mes -- idem
+    char* a_mask = strtok_r(nullptr, ",", &save);
+    channelsCloseMonth(a_mask ? (uint8_t)atoi(a_mask) : 0x0F);
     buildStatus(body, sizeof(body));
     reply(src, t_seq, body);
 

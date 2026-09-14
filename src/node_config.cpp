@@ -89,11 +89,11 @@ void configFactory() {
   cfg.ch[0].almLo = 500;            // 5,00 m -- nivel bajo de referencia, ajustar en terreno
 
   strncpy(cfg.ch[1].name, "Caudal", sizeof(cfg.ch[1].name));
-  cfg.ch[1].engMax     = 5000;      // 0..50,00 L/s
-  cfg.ch[1].unit       = 0;         // L/s
+  cfg.ch[1].engMax     = 10000;     // 0..100,00 m3/h
+  cfg.ch[1].unit       = 1;         // m3/h (fijo en todo el sistema, ver miHMI/screen_well)
   cfg.ch[1].totDaily   = true;
   cfg.ch[1].totMonthly = true;
-  cfg.ch[1].almHi      = 4500;      // 45,00 L/s -- caudal alto de referencia
+  cfg.ch[1].almHi      = 9000;      // 90,00 m3/h -- caudal alto de referencia
 
   for (uint8_t i = 0; i < 4; i++) {
     snprintf(cfg.diName[i], sizeof(cfg.diName[i]), "DI%u", (unsigned)(i + 1));

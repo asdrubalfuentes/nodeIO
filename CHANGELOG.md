@@ -3,6 +3,19 @@
 Versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico). El firmware embebe
 `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.4.3 — página "En vivo" en el portal cautivo
+
+- Nueva ruta `/live` (enlazada desde la página de configuración): muestra en
+  el celular, de solo lectura y auto-refrescada cada 2 s, exactamente lo
+  mismo que el nodo ya manda por LoRa en la trama `ST` — crudo e ingeniería
+  por canal, acumulados día/mes, alarmas activas, estado de DI/relés y
+  estadísticas del enlace (RSSI, último comando, antigüedad, rx/crc/tx).
+  Reutiliza las variables vivas de `channels.h`/`io.h`/`lora_proto.h`, no
+  agrega ningún estado nuevo. Costo: ~4.5 KB de flash, RAM sin cambios.
+- Solo disponible mientras el portal está levantado (mantener BUTTON_1 3 s),
+  que **pausa el LoRa** igual que antes — no se cambió ese comportamiento.
+  Ver alternativas evaluadas (incl. BLE) en `ORCHESTRATION`.
+
 ## 1.4.2 — IP fija + DNS para la WiFi de mantenimiento
 
 - Portal cautivo: la sección "WiFi de mantenimiento (OTA remota)" gana **IP

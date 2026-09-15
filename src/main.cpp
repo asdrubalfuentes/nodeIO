@@ -21,10 +21,13 @@
 //   1.4.2  IP fija opcional + DNS para la WiFi de mantenimiento (portal). Sin
 //          DNS explicito, IP fija dejaba al nodo sin resolver github.com --
 //          mismo bug ya corregido en nodeIO_master v1.5.3
+//   1.4.3  pagina "/live" en el portal cautivo: datos en vivo (crudo, ingenieria,
+//          acumulados, alarmas, DI/RO, estadisticas de enlace) -- lo mismo que
+//          ya manda por LoRa, solo de lectura, sin agregar estado nuevo
 #ifdef FW_VERSION_OVERRIDE
 #define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#define FW_SEMVER "1.4.2"
+#define FW_SEMVER "1.4.3"
 #endif
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };

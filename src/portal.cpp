@@ -1,5 +1,8 @@
 #include "portal.h"
 #include "node_config.h"
+#include "channels.h"
+#include "io.h"
+#include "lora_proto.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
@@ -68,7 +71,10 @@ static String buildPage() {
          ".row{display:flex;gap:10px}.row>div{flex:1}"
          ".cb{display:inline-block;width:auto;margin-right:6px}"
          "button{width:100%;padding:12px;margin-top:14px;font-size:16px;background:#08f;color:#fff;"
-         "border:0;border-radius:8px}</style></head><body><form method=POST action=/save>"
+         "border:0;border-radius:8px}"
+         "a.nav{display:inline-block;margin:10px 0;color:#8cf}</style></head>"
+         "<body><p style='text-align:center'><a class=nav href=/live>&#128202; Ver datos en vivo</a></p>"
+         "<form method=POST action=/save>"
          "<h1>Nodo IO &mdash; Configuraci&oacute;n</h1>");
 
   h += F("<fieldset><legend>Estado</legend>");
@@ -149,10 +155,79 @@ static String buildPage() {
   return h;
 }
 
+// Pagina de solo lectura con lo mismo que el nodo ya manda por LoRa (trama ST)
+// + estadisticas del enlace -- reusa las variables vivas de channels.h/io.h/
+// lora_proto.h, no agrega ningun estado nuevo. Se auto-refresca sola (meta
+// refresh, sin JS) para verla comodo parado junto al equipo con el celular.
+static String buildLivePage() {
+  String h;
+  h.reserve(4096);
+  h += F("<!doctype html><html><head><meta charset=utf-8>"
+         "<meta name=viewport content='width=device-width,initial-scale=1'>"
+         "<meta http-equiv=refresh content=2>"
+         "<title>Nodo IO - En vivo</title><style>"
+         "body{font-family:sans-serif;margin:0;background:#111;color:#eee}"
+         "main{max-width:520px;margin:auto;padding:16px}"
+         "h1{font-size:19px}fieldset{border:1px solid #444;margin:12px 0;border-radius:8px}"
+         "legend{color:#8cf;padding:0 6px}"
+         "table{width:100%;border-collapse:collapse}"
+         "td{padding:4px 2px;font-size:14px;border-bottom:1px solid #333}"
+         "td:first-child{color:#aaa}td:last-child{text-align:right;font-family:monospace}"
+         ".alm{color:#f66;font-weight:bold}"
+         "a.nav{color:#8cf}</style></head><body><main>"
+         "<p><a class=nav href=/>&larr; Configuraci&oacute;n</a></p>"
+         "<h1>Nodo IO &mdash; En vivo</h1>");
+
+  h += "<fieldset><legend>Enlace</legend><table>";
+  h += "<tr><td>Direcci&oacute;n</td><td>" + String(cfg.nodeAddr) +
+       (cfg.adopted ? " (adoptado)" : " (SIN ADOPTAR)") + "</td></tr>";
+  h += "<tr><td>&Uacute;ltimo comando</td><td>" +
+       String(loraStats.lastCmd[0] ? loraStats.lastCmd : "-") + "</td></tr>";
+  h += "<tr><td>RSSI</td><td>" + String(loraStats.lastRssi) + " dBm</td></tr>";
+  uint32_t ageMs = loraStats.lastRxMs ? (millis() - loraStats.lastRxMs) : 0;
+  h += "<tr><td>Antig&uuml;edad del &uacute;ltimo RX</td><td>" + String(ageMs / 1000) + " s</td></tr>";
+  h += "<tr><td>rx / crc / tx</td><td>" + String(loraStats.rxOk) + " / " +
+       String(loraStats.rxCrcBad) + " / " + String(loraStats.txCount) + "</td></tr>";
+  h += "</table></fieldset>";
+
+  for (uint8_t i = 0; i < 4; i++) {
+    const ChannelCfg &c = cfg.ch[i];
+    const ChannelLive &lv = chLive[i];
+    bool named = i < 2;   // solo AI1/AI2 tienen escalado con sentido fisico hoy
+    h += "<fieldset><legend>" + String(c.name[0] ? c.name : ("AI" + String(i + 1))) + "</legend><table>";
+    h += "<tr><td>Crudo</td><td>" + String(ioReadAnalog(i)) + " / 4095</td></tr>";
+    if (named) {
+      const char *u = (i == 0) ? UNIT_LEVEL[c.unit] : UNIT_FLOW[c.unit];
+      h += "<tr><td>Ingenier&iacute;a</td><td>" + x100(lv.eng) + " " + u + "</td></tr>";
+      if (c.totDaily)   h += "<tr><td>Acumulado d&iacute;a</td><td>" + String(lv.accDia, 2) + " m&sup3;</td></tr>";
+      if (c.totMonthly) h += "<tr><td>Acumulado mes</td><td>" + String(lv.accMes, 2) + " m&sup3;</td></tr>";
+      if (lv.almHi || lv.almLo)
+        h += "<tr><td>Alarma</td><td class=alm>" + String(lv.almHi ? "ALTA " : "") +
+             String(lv.almLo ? "BAJA" : "") + "</td></tr>";
+    }
+    h += "</table></fieldset>";
+  }
+
+  h += "<fieldset><legend>Entradas / sal&iacute;das digitales</legend><table>";
+  for (uint8_t i = 0; i < 4; i++)
+    h += "<tr><td>" + String(cfg.diName[i][0] ? cfg.diName[i] : ("DI" + String(i + 1))) +
+         "</td><td>" + String(ioReadDigital(i) ? "ON" : "off") + "</td></tr>";
+  for (uint8_t i = 0; i < 4; i++) {
+    bool enabled = cfg.relayEnable & (1 << i);
+    h += "<tr><td>" + String(cfg.doName[i][0] ? cfg.doName[i] : ("RO" + String(i + 1))) +
+         "</td><td>" + (enabled ? String(ioGetRelay(i) ? "ON" : "off") : String("deshabilitado")) + "</td></tr>";
+  }
+  h += "</table></fieldset>";
+
+  h += F("</main></body></html>");
+  return h;
+}
+
 // --------------------------------------------------------------------------
 // Request handlers
 // --------------------------------------------------------------------------
 static void handleRoot() { web.send(200, "text/html", buildPage()); }
+static void handleLive() { web.send(200, "text/html", buildLivePage()); }
 
 static void handleRedirect() {
   web.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/", true);
@@ -257,6 +332,7 @@ void portalStart() {
   dns.start(DNS_PORT, "*", ip);
 
   web.on("/", handleRoot);
+  web.on("/live", handleLive);
   web.on("/save", HTTP_POST, handleSave);
   web.on("/release", HTTP_POST, handleRelease);
   web.on("/generate_204", handleRedirect);       // Android

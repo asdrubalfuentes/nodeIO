@@ -33,7 +33,8 @@ pio device monitor -b 115200
 | Módulo | Responsabilidad |
 |---|---|
 | `src/main.cpp` | Máquina de estados `MODE_NORMAL` / `MODE_PORTAL` / `MODE_WAIT_ADOPT`, splash OLED, render de estado, long-press de BUTTON_1, botón PRG local. **Único TU que incluye `heltec_unofficial.h`.** |
-| `src/io.{h,cpp}` | Mapa de pines, init, ISR compartida de entradas digitales/botones, lectura de AI/DI, control de relés con máscara de habilitación + estado seguro + pulsos. |
+| `src/io.{h,cpp}` | Mapa de pines, init, ISR compartida de entradas digitales/botones, lectura de AI/DI (oversampling de 64 muestras por canal), control de relés con máscara de habilitación + estado seguro + pulsos. |
+| `src/channels.{h,cpp}` | Escalado raw→ingeniería + filtro EMA (a período fijo, 150 ms) + totalizador día/mes (NVS) + alarmas de umbral, por canal analógico. `chLive[4]` expone crudo/pre-filtro/post-filtro (`rawAdc`/`engRaw`/`eng`) para diagnóstico — ver comando serial `medir` (§5). |
 | `src/node_config.{h,cpp}` | `struct NodeConfig` persistida en NVS (namespace `nodeio`, un blob + `magic`), incluye `bool adopted`. `nodeMac()` = idUnico (12 hex efuse). Sustituye los stubs `rescueFlashConfig()/saveFlashConfig()` del scaffold original. |
 | `src/portal.{h,cpp}` | Portal cautivo: `WiFi.softAP` + `DNSServer` (:53, `*`) + `WebServer` (:80). `POST /save` valida, persiste y reinicia. `POST /release` anula la adopción. Muestra MAC + estado de adopción. `GET /live`: página de solo lectura con los mismos datos de la trama `ST` (crudo/ingeniería/acumulados/alarmas/DI/relés/enlace), auto-refrescada cada 2 s — para ver el nodo desde el celular parado junto al equipo. |
 | `src/lora_proto.{h,cpp}` | Protocolo responder: `begin()` desde `cfg`, RX por interrupción (`setDio1Action`), verificación CRC32. Aprovisionamiento `DISC`/`ROLLCALL`/`ADOPT`/`RELEASE`/**`OTA`**. Dispatch de `RD`/`WR`/`WP`/`PING` solo si `cfg.adopted`. |
@@ -136,6 +137,12 @@ Módulo `src/ota_update.{h,cpp}` + CI `.github/workflows/release.yml` (modelo de
 
 > El **último flasheo por USB** debe llevar el cliente OTA **y** la WiFi de
 > mantenimiento configurada en el portal; a partir de ahí, sin cable.
+
+**Comando por Serial/USB `medir`** (115200 baud): alterna un stream de
+diagnóstico (cada 300 ms) con las 3 etapas de cada canal — crudo del ADC
+(oversampleado), escalado antes del EMA y valor final filtrado. Pensado para
+comparar en banco contra un multímetro en las entradas del canal. Se apaga
+escribiendo `medir` de nuevo.
 
 ## 6. Cómo extender
 

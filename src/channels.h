@@ -11,11 +11,13 @@
 // hora real), via channelsCloseDay()/channelsCloseMonth().
 
 struct ChannelLive {
-  int16_t eng    = 0;      // valor escalado x100, ya filtrado (EMA)
-  float   accDia = 0.0f;   // acumulado del dia en curso (m3) -- solo si totDaily
-  float   accMes = 0.0f;   // acumulado del mes en curso (m3) -- solo si totMonthly
-  bool    almHi  = false;
-  bool    almLo  = false;
+  uint16_t rawAdc = 0;      // cuentas ADC crudas (post-oversampling), sin escalar -- diagnostico
+  int16_t  engRaw = 0;      // valor escalado x100, clamped, ANTES del EMA -- diagnostico
+  int16_t  eng    = 0;      // valor escalado x100, ya filtrado (EMA)
+  float    accDia = 0.0f;   // acumulado del dia en curso (m3) -- solo si totDaily
+  float    accMes = 0.0f;   // acumulado del mes en curso (m3) -- solo si totMonthly
+  bool     almHi  = false;
+  bool     almLo  = false;
 };
 
 extern ChannelLive chLive[4];

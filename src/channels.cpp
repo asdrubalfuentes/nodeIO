@@ -91,6 +91,9 @@ void channelsService() {
       if (y < lo) y = lo; else if (y > hi) y = hi;
     }
 
+    chLive[i].rawAdc = raw;                     // diagnostico: ver comando serial "medir"
+    chLive[i].engRaw = (int16_t)lroundf(y);      // idem, valor pre-EMA
+
     if (c.filter > 0) {
       if (!emaPrimed[i]) { emaState[i] = y; emaPrimed[i] = true; }   // arranca sin transitorio
       float a = 1.0f - (float)c.filter / 101.0f;

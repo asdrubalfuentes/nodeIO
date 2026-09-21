@@ -3,6 +3,17 @@
 Versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico). El firmware embebe
 `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.4.5 — comando serial "medir" (diagnóstico crudo/pre-filtro/post-filtro)
+
+- Escribir `medir` por Serial/USB (115200 baud) alterna un stream que imprime,
+  cada 300 ms, las 3 etapas de cada canal: el crudo del ADC ya oversampleado
+  (`ioReadAnalog()`), el valor escalado+clamped **antes** del EMA
+  (`chLive[].engRaw`, nuevo) y el valor final filtrado (`chLive[].eng`). Útil
+  en banco para comparar contra un multímetro en las entradas y ver cuánto
+  está aportando cada etapa del "doble filtraje" de 1.4.4. Se desactiva
+  escribiendo `medir` de nuevo.
+- Sin cambios de `CFG_MAGIC` ni de protocolo.
+
 ## 1.4.4 — fix: filtro EMA inestable (lecturas ruidosas)
 
 - **Reporte de campo:** "el nodo lee muy ruidoso, el filtro parece inestable".

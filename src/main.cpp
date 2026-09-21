@@ -36,10 +36,14 @@
 //          ruido resulto ser del ADC del ESP32-S3 mismo, no de la senal
 //          (verificado en banco: multimetro fijo, analogRead() de 1 muestra
 //          saltaba igual).
+//   1.4.5  comando serial "medir": stream de diagnostico (cada 300ms) con las
+//          3 etapas de cada canal -- crudo ADC, escalado pre-EMA, filtrado
+//          post-EMA -- para verificar en banco contra un multimetro que tanto
+//          esta aportando cada etapa del filtro.
 #ifdef FW_VERSION_OVERRIDE
 #define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#define FW_SEMVER "1.4.4"
+#define FW_SEMVER "1.4.5"
 #endif
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };
@@ -168,6 +172,30 @@ static bool serialCmdIs(const char *line, const char *cmd) {
   return c == '\0' || c == '\r' || c == '\n' || c == ' ';
 }
 
+// ---- comando por Serial: "medir" -------------------------------------------
+// Diagnostico de banco (v1.4.5): imprime, cada 300 ms mientras esta activo,
+// las 3 etapas de cada canal -- crudo del ADC (ya oversampleado, ioReadAnalog()),
+// escalado+clamped ANTES del EMA (chLive[].engRaw) y el valor final filtrado
+// (chLive[].eng) -- para poder comparar contra un multimetro en las entradas y
+// ver cuanto esta aportando cada etapa del "doble filtraje" (ver channels.cpp).
+// Se activa/desactiva escribiendo "medir" de nuevo.
+static bool     serialMeasureOn    = false;
+static uint32_t serialMeasureLastMs = 0;
+
+static void serviceSerialMeasure() {
+  if (!serialMeasureOn) return;
+  uint32_t now = millis();
+  if (now - serialMeasureLastMs < 300) return;
+  serialMeasureLastMs = now;
+  for (uint8_t i = 0; i < 4; i++) {
+    const ChannelCfg &c = cfg.ch[i];
+    Serial.printf("[medir] ch%u %-14s raw=%4u  pre_filtro=%7.2f  post_filtro=%7.2f  (filtro=%u)\n",
+                  i, c.name, (unsigned)chLive[i].rawAdc,
+                  chLive[i].engRaw / 100.0f, chLive[i].eng / 100.0f, (unsigned)c.filter);
+  }
+  Serial.println();
+}
+
 static void serviceSerialCommands() {
   static char buf[64];
   static uint8_t len = 0;
@@ -183,8 +211,12 @@ static void serviceSerialCommands() {
             serialCmdIs(buf, "ota")) {
           Serial.println("[serial] buscar actualizacion -> forzando chequeo OTA");
           runOtaCheckNow();
+        } else if (serialCmdIs(buf, "medir")) {
+          serialMeasureOn = !serialMeasureOn;
+          Serial.printf("[serial] medir -> %s\n",
+                         serialMeasureOn ? "ON (raw/pre_filtro/post_filtro cada 300ms)" : "OFF");
         } else {
-          Serial.printf("[serial] comando no reconocido: \"%s\" (probar: buscar actualizacion)\n", buf);
+          Serial.printf("[serial] comando no reconocido: \"%s\" (probar: buscar actualizacion, medir)\n", buf);
         }
       }
       continue;
@@ -407,6 +439,7 @@ void loop() {
   ioServicePulses(cfg.relaySafe);
   serviceLocalInputs();
   channelsService();               // escala + filtra EMA, cada vuelta
+  serviceSerialMeasure();          // "medir": stream de diagnostico crudo/pre/post filtro
   if (millis() - last1sTickMs >= 1000) {
     last1sTickMs = millis();
     channelsTick1s();               // integra el totalizador, 1x/seg

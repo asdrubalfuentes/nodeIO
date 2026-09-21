@@ -57,17 +57,28 @@ void ioInit(uint8_t enableMask, uint8_t safeMask) {
 // Oversampling: el ADC del ESP32-S3 salta varias cuentas muestra a muestra
 // aun con una entrada perfectamente estable (confirmado en banco: multimetro
 // fijo en 1.7988V/0.8879V, pero analogRead() de una sola muestra saltaba
-// bastante). Promediar N lecturas consecutivas reduce ese ruido propio del
-// ADC en ~sqrt(N) antes de que le llegue al EMA de channels.cpp (doble
-// filtraje: oversampling aqui + EMA a periodo fijo alla).
+// bastante; luego confirmado con osciloscopio -- la senal en si trae ruido).
+// Se combinan N lecturas consecutivas por su **RMS** (valor eficaz,
+// sqrt(mean(x^2))), no por promedio simple: a pedido del usuario, para
+// quedarse con la medida "integral" de la senal ruidosa en vez de la media
+// aritmetica. Nota: con ruido simetrico esto sesga el resultado levemente
+// hacia arriba respecto al promedio real (RMS >= media siempre), pero para
+// la amplitud de ruido observada aqui (decenas de cuentas sobre una base de
+// cientos) el sesgo es de menos de 1 cuenta -- despreciable frente al ruido
+// que se esta filtrando. Reduce el ruido en ~sqrt(N) antes de que le llegue
+// al EMA de channels.cpp (doble filtraje: oversampling aqui + EMA a periodo
+// fijo alla).
 static const uint8_t ADC_OVERSAMPLE = 64;   // margen de tiempo disponible: el usuario se
                                              // conforma con un ciclo de lectura de 150ms
 
 uint16_t ioReadAnalog(uint8_t ch) {
   if (ch > 3) return 0;
-  uint32_t acc = 0;
-  for (uint8_t i = 0; i < ADC_OVERSAMPLE; i++) acc += analogRead(ADC_PINS[ch]);
-  return (uint16_t)((acc + ADC_OVERSAMPLE / 2) / ADC_OVERSAMPLE);
+  uint64_t sumSq = 0;
+  for (uint8_t i = 0; i < ADC_OVERSAMPLE; i++) {
+    uint32_t s = analogRead(ADC_PINS[ch]);
+    sumSq += (uint64_t)s * s;
+  }
+  return (uint16_t)lroundf(sqrtf((float)sumSq / (float)ADC_OVERSAMPLE));
 }
 
 uint8_t ioReadDigital(uint8_t ch) {

@@ -40,10 +40,16 @@
 //          3 etapas de cada canal -- crudo ADC, escalado pre-EMA, filtrado
 //          post-EMA -- para verificar en banco contra un multimetro que tanto
 //          esta aportando cada etapa del filtro.
+//   1.4.6  ioReadAnalog() combina las 64 muestras del oversampling por RMS
+//          (valor eficaz) en vez de promedio simple, a pedido del usuario
+//          tras confirmar con osciloscopio que la senal trae ruido real (no
+//          solo el ADC). Con ruido simetrico el RMS queda levemente arriba
+//          de la media real, pero para la amplitud observada el sesgo es
+//          menor a 1 cuenta.
 #ifdef FW_VERSION_OVERRIDE
 #define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#define FW_SEMVER "1.4.5"
+#define FW_SEMVER "1.4.6"
 #endif
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };

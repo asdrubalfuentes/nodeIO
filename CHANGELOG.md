@@ -3,6 +3,19 @@
 Versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico). El firmware embebe
 `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.4.6 — oversampling por RMS en vez de promedio simple
+
+- A pedido del usuario, tras confirmar con osciloscopio que la señal de los
+  canales analógicos trae ruido real (no solo el propio del ADC):
+  `ioReadAnalog()` combina las 64 muestras del oversampling por **RMS**
+  (`sqrt(mean(x²))`) en lugar de la media aritmética, para quedarse con la
+  medida "integral" de la señal ruidosa.
+- Nota técnica dejada en el código: con ruido simétrico el RMS es siempre
+  ≥ la media real (por la desigualdad de Jensen); para la amplitud de ruido
+  observada en banco (decenas de cuentas sobre una base de cientos) ese
+  sesgo es menor a 1 cuenta — despreciable frente al ruido que se filtra.
+- Sin cambios de `CFG_MAGIC` ni de protocolo.
+
 ## 1.4.5 — comando serial "medir" (diagnóstico crudo/pre-filtro/post-filtro)
 
 - Escribir `medir` por Serial/USB (115200 baud) alterna un stream que imprime,

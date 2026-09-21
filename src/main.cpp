@@ -24,10 +24,22 @@
 //   1.4.3  pagina "/live" en el portal cautivo: datos en vivo (crudo, ingenieria,
 //          acumulados, alarmas, DI/RO, estadisticas de enlace) -- lo mismo que
 //          ya manda por LoRa, solo de lectura, sin agregar estado nuevo
+//   1.4.4  fix: filtro EMA inestable. channelsService() corria 1x por vuelta
+//          de loop() (sin delay, tasa altisima e irregular) -- la recurrencia
+//          del EMA es "por llamada", asi que el filtro configurado casi no
+//          filtraba y cambiaba de fuerza segun la carga del loop (reporte de
+//          campo: "lee muy ruidoso, el filtro parece inestable"). Ahora corre
+//          a periodo fijo (150 ms). De paso: faltaba el clamp() a
+//          [engMin,engMax] que exige la formula del contrato antes de
+//          filtrar -- ya se agrego. Ademas: doble filtraje -- ioReadAnalog()
+//          ahora promedia 64 muestras (oversampling) por lectura, porque el
+//          ruido resulto ser del ADC del ESP32-S3 mismo, no de la senal
+//          (verificado en banco: multimetro fijo, analogRead() de 1 muestra
+//          saltaba igual).
 #ifdef FW_VERSION_OVERRIDE
 #define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#define FW_SEMVER "1.4.3"
+#define FW_SEMVER "1.4.4"
 #endif
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_WAIT_ADOPT };

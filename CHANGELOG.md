@@ -3,6 +3,40 @@
 Versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico). El firmware embebe
 `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.4.4 — fix: filtro EMA inestable (lecturas ruidosas)
+
+- **Reporte de campo:** "el nodo lee muy ruidoso, el filtro parece inestable".
+  Causa: `channelsService()` (escalado + EMA) se llamaba una vez por cada
+  vuelta de `loop()`, y `loop()` no tiene `delay()` — corre miles de
+  veces/segundo cuando está libre, y mucho más lento cuando `loraLoop()` tiene
+  trabajo de radio/SPI. La fórmula del EMA (`eng_filt += (x - eng_filt) *
+  (1 - filtro/101)`, `REGISTER_MAP.md` §5) es una recurrencia **por llamada**,
+  heredada de cuando corría en el LOGO! a un ciclo de scan más o menos fijo:
+  con el filtro por defecto (15, alfa≈0.85 por llamada) y miles de
+  llamadas/seg, la constante de tiempo real caía a microsegundos — el filtro
+  prácticamente no filtraba nada, y además su "fuerza" cambiaba según cuánto
+  trabajo tuviera `loraLoop()` en cada momento (de ahí la sensación de lectura
+  inestable, no solo ruidosa).
+- Fix: `channelsService()` ahora corre a un período fijo (150 ms ≈ 6.7
+  lecturas/seg, holgado para nivel/caudal). Cada llamada representa un paso de
+  tiempo constante, así que el filtro configurado (0..100) se comporta igual
+  siempre, sin importar la carga del loop.
+- **Bug adicional encontrado de paso:** faltaba el `clamp()` del crudo
+  escalado a `[engMin,engMax]` que exige la fórmula del contrato
+  (`REGISTER_MAP.md` §5) antes de filtrar — un pico de ruido del ADC fuera de
+  `[rawMin,rawMax]` (lazo 4-20mA sin conectar, transitorio) podía mandar la
+  lectura (y el propio EMA) fuera del rango de ingeniería configurado. Ya se
+  agregó.
+- **Segundo hallazgo (verificado en banco):** con el voltaje de entrada
+  fijo por multímetro (1.7988V / 0.8879V, sin variar), `analogRead()` de una
+  sola muestra igual saltaba bastante — ruido propio del ADC del ESP32-S3, no
+  de la señal. `ioReadAnalog()` ahora promedia 64 lecturas consecutivas
+  (oversampling) antes de escalar, reduciendo ese ruido en ~8x (√64). Con
+  esto hay **doble filtraje**: oversampling del crudo (ruido instantáneo del
+  ADC) + EMA a período fijo (ruido/transitorios residuales en el tiempo).
+- Sin cambios de `CFG_MAGIC` ni de protocolo — solo firmware, mismo
+  comportamiento configurado desde el portal.
+
 ## 1.4.3 — página "En vivo" en el portal cautivo
 
 - Nueva ruta `/live` (enlazada desde la página de configuración): muestra en

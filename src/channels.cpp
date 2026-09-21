@@ -48,10 +48,31 @@ void channelsFlush() {
   lastFlushMs = millis();
 }
 
-// Escala raw->ingenieria (formula del contrato) + filtro EMA. Se llama seguido
-// desde loop() para que el filtro se sienta suave; el escalado en si no cuesta
-// nada, no hace falta limitarlo.
+// Escala raw->ingenieria (formula del contrato, REGISTER_MAP.md §5) + filtro EMA.
+//
+// Throttled a un periodo fijo (SVC_PERIOD_MS). La formula del EMA es una
+// recurrencia "por llamada" (eng_filt += (x - eng_filt) * (1 - filtro/101)),
+// heredada de cuando corria en el LOGO! a un ciclo de scan mas o menos fijo.
+// loop() aqui NO tiene delay y corre a una tasa altisima y muy irregular
+// (miles de veces/seg cuando esta libre, mucho mas lento cuando loraLoop()
+// atiende SPI/radio) -- llamar la recurrencia una vez por vuelta de loop()
+// hace que la constante de tiempo real del filtro dependa de esa tasa, no del
+// "filtro" configurado: con el default (15) el alfa efectivo por llamada es
+// ~0.85, y a miles de llamadas/seg eso converge al crudo en microsegundos ->
+// el filtro no filtra casi nada, y ademas cambia de "fuerza" segun cuanto
+// trabajo tenga loraLoop() en cada momento (de ahi la sensacion de lectura
+// "inestable"). Al fijar el periodo, cada llamada representa un paso de
+// tiempo constante y el filtro se comporta igual siempre.
+static const uint32_t SVC_PERIOD_MS = 150;   // ok para nivel/caudal (usuario: "me conformo
+                                              // con lectura 4x/seg o 150ms"); deja mas margen
+                                              // de tiempo para el oversampling de ioReadAnalog()
+static uint32_t       lastSvcMs = 0;
+
 void channelsService() {
+  uint32_t now = millis();
+  if (now - lastSvcMs < SVC_PERIOD_MS) return;
+  lastSvcMs = now;
+
   for (uint8_t i = 0; i < 4; i++) {
     const ChannelCfg &c = cfg.ch[i];
     uint16_t raw = ioReadAnalog(i);
@@ -62,6 +83,12 @@ void channelsService() {
       y = c.engMin;                         // SCALE_BAD: sin rango valido, no inventes nada
     } else {
       y = c.engMin + ((float)raw - (float)c.rawMin) * (float)(c.engMax - c.engMin) / span;
+      // clamp (REGISTER_MAP.md §5) -- un crudo fuera de [rawMin,rawMax] (ruido
+      // de ADC, lazo sin conectar) no debe poder mandar la lectura ni el
+      // filtro fuera del rango de ingenieria configurado.
+      float lo = c.engMin < c.engMax ? c.engMin : c.engMax;
+      float hi = c.engMin < c.engMax ? c.engMax : c.engMin;
+      if (y < lo) y = lo; else if (y > hi) y = hi;
     }
 
     if (c.filter > 0) {
